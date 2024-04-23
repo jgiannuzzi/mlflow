@@ -12,6 +12,7 @@ import (
 )
 
 var db *gorm.DB
+var runId string
 
 func init() {
 	var err error
@@ -19,21 +20,52 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	// Create experiment
+	var experiment model.Experiment
+	if err := faker.FakeData(&experiment); err != nil {
+		panic(err)
+	}
+	experiment.LifecycleStage = "active"
+	experiment.ExperimentID = 0
+
+	if err := db.Create(&experiment).Error; err != nil {
+		panic(fmt.Errorf("Failed to insert experiment: %v", err))
+	}
+
+	// Create run
+	var run model.Run
+	if err := faker.FakeData(&run); err != nil {
+		panic(err)
+	}
+	run.SourceType = "LOCAL"
+	run.LifecycleStage = "active"
+	run.Status = "RUNNING"
+
+	// linked to the experiment
+	run.ExperimentID = experiment.ExperimentID
+
+	if err := db.Create(&run).Error; err != nil {
+		panic(fmt.Errorf("Failed to insert run: %v", err))
+	}
+
+	// Metrics need a link to a run
+	runId = run.RunUUID
 }
 
-func BenchmarkInsertExperiment(b *testing.B) {
+func BenchmarkInsertMetric(b *testing.B) {
 	// Run the benchmark
 	for n := 0; n < b.N; n++ {
-		// Generate a new experiment
-		exp := generateExperiment(b)
+		// Generate a new metric
+		metric := generateMetric(b)
 
-		if err := db.Create(exp).Error; err != nil {
+		if err := db.Create(metric).Error; err != nil {
 			b.Fatalf("Failed to insert experiment: %v", err)
 		}
 	}
 }
 
-func BenchmarkInsertManyExperiments(b *testing.B) {
+func BenchmarkInsertManyMetrics(b *testing.B) {
 	for _, v := range []struct {
 		input int
 	}{
@@ -45,38 +77,37 @@ func BenchmarkInsertManyExperiments(b *testing.B) {
 	} {
 		b.Run(fmt.Sprintf("input_size_%d", v.input), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
-				// Generate new experiments
-				exp := generateExperiments(b, v.input)
+				// Generate new metrics
+				metrics := generateMetrics(b, v.input)
 
-				if err := db.CreateInBatches(&exp, 1000).Error; err != nil {
-					b.Fatalf("Failed to insert experiment: %v", err)
+				if err := db.CreateInBatches(&metrics, 1000).Error; err != nil {
+					b.Fatalf("Failed to insert batch metrics: %v", err)
 				}
 			}
 		})
 	}
 }
 
-func generateExperiment(b *testing.B) *model.Experiment {
+func generateMetric(b *testing.B) *model.Metric {
 	b.Helper()
 
-	var exp model.Experiment
-	if err := faker.FakeData(&exp); err != nil {
+	var metric model.Metric
+	if err := faker.FakeData(&metric); err != nil {
 		panic(err)
 	}
-	exp.LifecycleStage = "active"
-	exp.ExperimentID = 0
+	metric.RunUUID = runId
 
-	return &exp
+	return &metric
 }
 
-func generateExperiments(b *testing.B, n int) []*model.Experiment {
+func generateMetrics(b *testing.B, n int) []*model.Metric {
 	b.Helper()
 
-	exps := make([]*model.Experiment, n)
+	metrics := make([]*model.Metric, n)
 	for i := 0; i < n; i++ {
-		exp := generateExperiment(b)
-		exps[i] = exp
+		metric := generateMetric(b)
+		metrics[i] = metric
 	}
 
-	return exps
+	return metrics
 }
