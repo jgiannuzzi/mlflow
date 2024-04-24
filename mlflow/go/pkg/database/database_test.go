@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/go-faker/faker/v4"
+	// Fight me
+	"github.com/jmoiron/sqlx"
+	_ "github.com/lib/pq" // PostgreSQL driver
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -14,6 +17,7 @@ import (
 
 var (
 	db    *gorm.DB
+	dbx   *sqlx.DB
 	runId string
 )
 
@@ -54,6 +58,12 @@ func init() {
 
 	// Metrics need a link to a run
 	runId = run.RunUUID
+
+	// SQLX
+	dbx, err = sqlx.Connect("postgres", "user=postgres password=postgres dbname=postgres sslmode=disable")
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 type RunInput struct {
@@ -71,7 +81,7 @@ var inputs = []RunInput{
 
 func BenchmarkInsertMetrics(b *testing.B) {
 	for _, v := range inputs {
-		b.Run(fmt.Sprintf("input_size_%d", v.input), func(b *testing.B) {
+		b.Run(fmt.Sprintf("GORM input_size_%d", v.input), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				// Generate new metrics
 				metrics := generateMetrics(b, v.input)
@@ -79,6 +89,44 @@ func BenchmarkInsertMetrics(b *testing.B) {
 				if err := db.CreateInBatches(&metrics, 1000).Error; err != nil {
 					b.Fatalf("Failed to insert batch metrics: %v", err)
 				}
+
+			}
+		})
+
+		b.Run(fmt.Sprintf("SQLX input_size_%d", v.input), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				// Start transaction
+				tx, err := dbx.Beginx()
+				if err != nil {
+					log.Fatalln("Failed to start transaction:", err)
+				}
+
+				// Generate new metrics
+				metrics := generateMetrics(b, v.input)
+				query := "INSERT INTO metrics (key, value, timestamp, run_uuid, step, is_nan) VALUES (:key, :value, :timestamp, :run_uuid, :step, :is_nan)"
+
+				// Insert each metric individually
+				for _, metric := range metrics {
+					paramMap := map[string]interface{}{
+						"key":       metric.Key,
+						"value":     metric.Value,
+						"timestamp": metric.Timestamp,
+						"run_uuid":  metric.RunUUID,
+						"step":      metric.Step,
+						"is_nan":    metric.IsNan,
+					}
+					_, err := tx.NamedExec(query, paramMap)
+					if err != nil {
+						tx.Rollback() // Roll back in case of error
+						log.Fatalln("Failed to execute insert:", err)
+					}
+				}
+
+				// Commit transaction
+				if err := tx.Commit(); err != nil {
+					log.Fatalln("Failed to commit transaction:", err)
+				}
+
 			}
 		})
 	}
@@ -108,15 +156,50 @@ func generateMetrics(b *testing.B, n int) []*model.Metric {
 	return metrics
 }
 
-func BenchmarkSelectMetrics(b *testing.B) {
+func BenchmarkSelectMetrics_Gorm(b *testing.B) {
 	for _, v := range inputs {
-		b.Run(fmt.Sprintf("input_size_%d", v.input), func(b *testing.B) {
+		b.Run(fmt.Sprintf("GORM input_size_%d", v.input), func(b *testing.B) {
 			n := v.input
 			var metrics []*model.Metric
 			result := db.Limit(n).Find(&metrics)
 			if result.Error != nil {
 				log.Fatalf("Query failed: %v", result.Error)
 			}
+
+		})
+
+		b.Run(fmt.Sprintf("SQLX input_size_%d", v.input), func(b *testing.B) {
+			n := v.input
+			metrics := make([]*model.Metric, n)
+
+			rows, err := dbx.Queryx(fmt.Sprintf("select key, value, timestamp, run_uuid, step, is_nan from metrics LIMIT %d", n))
+			if err != nil {
+				log.Fatalf("Query failed: %v", err)
+			}
+			defer rows.Close()
+
+			idx := 0
+
+			for rows.Next() {
+				var key string
+				var value float64
+				var timestamp int64
+				var run_uuid string
+				var step int64
+				var is_nan bool
+				err = rows.Scan(&key, &value, &timestamp, &run_uuid, &step, &is_nan)
+				m := model.Metric{
+					Key:       key,
+					Value:     value,
+					Timestamp: timestamp,
+					RunUUID:   run_uuid,
+					Step:      step,
+					IsNan:     is_nan,
+				}
+				metrics[idx] = &m
+				idx += 1
+			}
+
 		})
 	}
 }
