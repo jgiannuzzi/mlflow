@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"log"
 	"testing"
 
 	"github.com/go-faker/faker/v4"
@@ -55,17 +56,21 @@ func init() {
 	runId = run.RunUUID
 }
 
+type RunInput struct {
+	input int
+}
+
+var inputs = []RunInput{
+	{input: 1},
+	{input: 10},
+	{input: 100},
+	{input: 1000},
+	{input: 10000},
+	{input: 100000},
+}
+
 func BenchmarkInsertMetrics(b *testing.B) {
-	for _, v := range []struct {
-		input int
-	}{
-		{input: 1},
-		{input: 10},
-		{input: 100},
-		{input: 1000},
-		{input: 10000},
-		{input: 100000},
-	} {
+	for _, v := range inputs {
 		b.Run(fmt.Sprintf("input_size_%d", v.input), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				// Generate new metrics
@@ -101,4 +106,17 @@ func generateMetrics(b *testing.B, n int) []*model.Metric {
 	}
 
 	return metrics
+}
+
+func BenchmarkSelectMetrics(b *testing.B) {
+	for _, v := range inputs {
+		b.Run(fmt.Sprintf("input_size_%d", v.input), func(b *testing.B) {
+			n := v.input
+			var metrics []*model.Metric
+			result := db.Limit(n).Find(&metrics)
+			if result.Error != nil {
+				log.Fatalf("Query failed: %v", result.Error)
+			}
+		})
+	}
 }
