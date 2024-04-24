@@ -11,8 +11,10 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/database/model"
 )
 
-var db *gorm.DB
-var runId string
+var (
+	db    *gorm.DB
+	runId string
+)
 
 func init() {
 	var err error
@@ -53,22 +55,11 @@ func init() {
 	runId = run.RunUUID
 }
 
-func BenchmarkInsertMetric(b *testing.B) {
-	// Run the benchmark
-	for n := 0; n < b.N; n++ {
-		// Generate a new metric
-		metric := generateMetric(b)
-
-		if err := db.Create(metric).Error; err != nil {
-			b.Fatalf("Failed to insert experiment: %v", err)
-		}
-	}
-}
-
-func BenchmarkInsertManyMetrics(b *testing.B) {
+func BenchmarkInsertMetrics(b *testing.B) {
 	for _, v := range []struct {
 		input int
 	}{
+		{input: 1},
 		{input: 10},
 		{input: 100},
 		{input: 1000},
