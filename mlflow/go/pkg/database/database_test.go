@@ -83,7 +83,7 @@ var inputs = []RunInput{
 	{input: 100000},
 }
 
-func DenchmarkInsertMetrics(b *testing.B) {
+func BenchmarkInsertMetrics(b *testing.B) {
 	for _, v := range inputs {
 		b.Run(fmt.Sprintf("GORM input_size_%d", v.input), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
