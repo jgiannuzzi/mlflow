@@ -75,15 +75,15 @@ type RunInput struct {
 }
 
 var inputs = []RunInput{
-	// {input: 1},
+	{input: 1},
 	{input: 10},
-	// {input: 100},
-	// {input: 1000},
-	// {input: 10000},
-	// {input: 100000},
+	{input: 100},
+	{input: 1000},
+	{input: 10000},
+	{input: 100000},
 }
 
-func BenchmarkInsertMetrics(b *testing.B) {
+func DenchmarkInsertMetrics(b *testing.B) {
 	for _, v := range inputs {
 		b.Run(fmt.Sprintf("GORM input_size_%d", v.input), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
@@ -165,34 +165,39 @@ func generateMetrics(b *testing.B, n int) []*model.Metric {
 	return metrics
 }
 
-func BenchmarkSelectMetrics_Gorm(b *testing.B) {
+func BenchmarkSelectMetrics(b *testing.B) {
 	for _, v := range inputs {
 		b.Run(fmt.Sprintf("GORM input_size_%d", v.input), func(b *testing.B) {
-			n := v.input
-			var metrics []*model.Metric
-			result := db.Limit(n).Find(&metrics)
-			if result.Error != nil {
-				log.Fatalf("Query failed: %v", result.Error)
+			for n := 0; n < b.N; n++ {
+				metrics := make([]*model.Metric, 0, v.input)
+				batchSize := 1000
+				var batchResults []*model.Metric
+
+				db.Limit(v.input).FindInBatches(&batchResults, batchSize, func(tx *gorm.DB, batch int) error {
+					metrics = append(metrics, batchResults...)
+					return nil
+				})
 			}
 		})
 
 		b.Run(fmt.Sprintf("SQLX input_size_%d", v.input), func(b *testing.B) {
-			n := v.input
-			metrics := make([]*model.Metric, n)
+			for n := 0; n < b.N; n++ {
+				metrics := make([]*model.Metric, v.input)
 
-			rows, err := dbx.Queryx(fmt.Sprintf("select key, value, timestamp, run_uuid, step, is_nan from metrics LIMIT %d", n))
-			if err != nil {
-				log.Fatalf("Query failed: %v", err)
-			}
-			defer rows.Close()
+				rows, err := dbx.Queryx(fmt.Sprintf("select key, value, timestamp, run_uuid, step, is_nan from metrics LIMIT %d", v.input))
+				if err != nil {
+					log.Fatalf("Query failed: %v", err)
+				}
+				defer rows.Close()
 
-			idx := 0
+				idx := 0
 
-			for rows.Next() {
-				var metric model.Metric
-				err = rows.StructScan(&metric)
-				metrics[idx] = &metric
-				idx += 1
+				for rows.Next() {
+					var metric model.Metric
+					err = rows.StructScan(&metric)
+					metrics[idx] = &metric
+					idx += 1
+				}
 			}
 		})
 	}
