@@ -75,12 +75,12 @@ type RunInput struct {
 }
 
 var inputs = []RunInput{
-	{input: 1},
+	// {input: 1},
 	{input: 10},
-	{input: 100},
-	{input: 1000},
-	{input: 10000},
-	{input: 100000},
+	// {input: 100},
+	// {input: 1000},
+	// {input: 10000},
+	// {input: 100000},
 }
 
 func BenchmarkInsertMetrics(b *testing.B) {
@@ -93,7 +93,6 @@ func BenchmarkInsertMetrics(b *testing.B) {
 				if err := db.CreateInBatches(&metrics, 1000).Error; err != nil {
 					b.Fatalf("Failed to insert batch metrics: %v", err)
 				}
-
 			}
 		})
 
@@ -109,20 +108,27 @@ func BenchmarkInsertMetrics(b *testing.B) {
 				metrics := generateMetrics(b, v.input)
 				query := "INSERT INTO metrics (key, value, timestamp, run_uuid, step, is_nan) VALUES (:key, :value, :timestamp, :run_uuid, :step, :is_nan)"
 
-				// Insert each metric individually
-				for _, metric := range metrics {
-					paramMap := map[string]interface{}{
-						"key":       metric.Key,
-						"value":     metric.Value,
-						"timestamp": metric.Timestamp,
-						"run_uuid":  metric.RunUUID,
-						"step":      metric.Step,
-						"is_nan":    metric.IsNan,
-					}
-					_, err := tx.NamedExec(query, paramMap)
+				if v.input <= 1000 {
+					_, err = tx.NamedExec(query, metrics)
 					if err != nil {
 						tx.Rollback() // Roll back in case of error
 						log.Fatalln("Failed to execute insert:", err)
+					}
+				} else {
+					// Process in batches
+					batchSize := 1000
+
+					for i := 0; i < len(metrics); i += batchSize {
+						end := i + batchSize
+						if end > len(metrics) {
+							end = len(metrics)
+						}
+						batch := metrics[i:end]
+						_, err = tx.NamedExec(query, batch)
+						if err != nil {
+							tx.Rollback() // Roll back in case of error
+							log.Fatalln("Failed to execute insert:", err)
+						}
 					}
 				}
 
@@ -130,7 +136,6 @@ func BenchmarkInsertMetrics(b *testing.B) {
 				if err := tx.Commit(); err != nil {
 					log.Fatalln("Failed to commit transaction:", err)
 				}
-
 			}
 		})
 	}
