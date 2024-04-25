@@ -11,6 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/database/model"
 )
@@ -24,7 +25,9 @@ var (
 func init() {
 	var err error
 	databaseUrl := "postgresql://postgres:postgres@localhost/postgres"
-	db, err = gorm.Open(postgres.Open(databaseUrl))
+	db, err = gorm.Open(postgres.Open(databaseUrl), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
 	if err != nil {
 		panic(err)
 	}
