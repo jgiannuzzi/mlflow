@@ -8,12 +8,12 @@ const TableNameMetric = "metrics"
 
 // Metric mapped from table <metrics>
 type Metric struct {
-	Key       string  `gorm:"column:key;primaryKey" json:"key"`
-	Value     float64 `gorm:"column:value;primaryKey" json:"value"`
-	Timestamp int64   `gorm:"column:timestamp;primaryKey" json:"timestamp"`
-	RunUUID   string  `gorm:"column:run_uuid;primaryKey" json:"run_uuid"`
-	Step      int64   `gorm:"column:step;primaryKey" json:"step"`
-	IsNan     bool    `gorm:"column:is_nan;primaryKey" json:"is_nan"`
+	Key       string  `db:"key" gorm:"column:key;primaryKey" json:"key"`
+	Value     float64 `db:"value" gorm:"column:value;primaryKey" json:"value"`
+	Timestamp int64   `db:"timestamp" gorm:"column:timestamp;primaryKey" json:"timestamp"`
+	RunUUID   string  `db:"run_uuid" gorm:"column:run_uuid;primaryKey" json:"run_uuid"`
+	Step      int64   `db:"step" gorm:"column:step;primaryKey" json:"step"`
+	IsNan     bool    `db:"is_nan" gorm:"column:is_nan;primaryKey" json:"is_nan"`
 }
 
 // TableName Metric's table name

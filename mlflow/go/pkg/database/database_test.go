@@ -166,7 +166,6 @@ func BenchmarkSelectMetrics_Gorm(b *testing.B) {
 			if result.Error != nil {
 				log.Fatalf("Query failed: %v", result.Error)
 			}
-
 		})
 
 		b.Run(fmt.Sprintf("SQLX input_size_%d", v.input), func(b *testing.B) {
@@ -182,25 +181,11 @@ func BenchmarkSelectMetrics_Gorm(b *testing.B) {
 			idx := 0
 
 			for rows.Next() {
-				var key string
-				var value float64
-				var timestamp int64
-				var run_uuid string
-				var step int64
-				var is_nan bool
-				err = rows.Scan(&key, &value, &timestamp, &run_uuid, &step, &is_nan)
-				m := model.Metric{
-					Key:       key,
-					Value:     value,
-					Timestamp: timestamp,
-					RunUUID:   run_uuid,
-					Step:      step,
-					IsNan:     is_nan,
-				}
-				metrics[idx] = &m
+				var metric model.Metric
+				err = rows.StructScan(&metric)
+				metrics[idx] = &metric
 				idx += 1
 			}
-
 		})
 	}
 }
