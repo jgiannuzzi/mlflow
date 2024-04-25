@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-faker/faker/v4"
 	// Fight me
+	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	"github.com/jmoiron/sqlx"
-	_ "github.com/lib/pq" // PostgreSQL driver
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -23,7 +23,8 @@ var (
 
 func init() {
 	var err error
-	db, err = gorm.Open(postgres.Open("postgresql://postgres:postgres@localhost/postgres"))
+	databaseUrl := "postgresql://postgres:postgres@localhost/postgres"
+	db, err = gorm.Open(postgres.Open(databaseUrl))
 	if err != nil {
 		panic(err)
 	}
@@ -60,7 +61,7 @@ func init() {
 	runId = run.RunUUID
 
 	// SQLX
-	dbx, err = sqlx.Connect("postgres", "user=postgres password=postgres dbname=postgres sslmode=disable")
+	dbx, err = sqlx.Connect("pgx", databaseUrl)
 	if err != nil {
 		log.Fatalln(err)
 	}
