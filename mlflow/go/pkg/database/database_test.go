@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"github.com/go-faker/faker/v4"
-	// Fight me
-	_ "github.com/jackc/pgx/v5/stdlib" // PostgreSQL driver
 	"github.com/jmoiron/sqlx"
+	"github.com/jmoiron/sqlx/reflectx"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -64,10 +63,12 @@ func init() {
 	runId = run.RunUUID
 
 	// SQLX
-	dbx, err = sqlx.Connect("pgx", databaseUrl)
+	sqlDb, err := db.DB()
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("Failed to get database connection:", err)
 	}
+	dbx = sqlx.NewDb(sqlDb, "pgx")
+	dbx.Mapper = reflectx.NewMapperFunc("json", nil)
 }
 
 type RunInput struct {
@@ -167,36 +168,120 @@ func generateMetrics(b *testing.B, n int) []*model.Metric {
 
 func BenchmarkSelectMetrics(b *testing.B) {
 	for _, v := range inputs {
-		b.Run(fmt.Sprintf("GORM input_size_%d", v.input), func(b *testing.B) {
+		b.Run(fmt.Sprintf("GORM rows input_size_%d", v.input), func(b *testing.B) {
 			for n := 0; n < b.N; n++ {
-				metrics := make([]*model.Metric, 0, v.input)
-				batchSize := 1000
-				var batchResults []*model.Metric
+				metrics := make([]model.Metric, 0, v.input)
 
-				db.Limit(v.input).FindInBatches(&batchResults, batchSize, func(tx *gorm.DB, batch int) error {
-					metrics = append(metrics, batchResults...)
-					return nil
-				})
-			}
-		})
-
-		b.Run(fmt.Sprintf("SQLX input_size_%d", v.input), func(b *testing.B) {
-			for n := 0; n < b.N; n++ {
-				metrics := make([]*model.Metric, v.input)
-
-				rows, err := dbx.Queryx(fmt.Sprintf("select key, value, timestamp, run_uuid, step, is_nan from metrics LIMIT %d", v.input))
+				rows, err := db.Limit(v.input).Model(metrics).Rows()
 				if err != nil {
 					log.Fatalf("Query failed: %v", err)
 				}
 				defer rows.Close()
 
-				idx := 0
+				for rows.Next() {
+					var metric model.Metric
+					rows.Scan(&metric.Key, &metric.Value, &metric.Timestamp, &metric.RunUUID, &metric.Step, &metric.IsNan)
+					if err := db.ScanRows(rows, &metric); err != nil {
+						log.Fatalf("Failed to scan row: %v", err)
+					}
+					metrics = append(metrics, metric)
+				}
+
+				if len(metrics) != v.input {
+					log.Fatalf("Expected %d metrics, got %d", v.input, len(metrics))
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("GORM slice input_size_%d", v.input), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				metrics := make([]model.Metric, v.input)
+
+				if err := db.Limit(v.input).Find(&metrics).Error; err != nil {
+					log.Fatalf("Query failed: %v", err)
+				}
+
+				if len(metrics) != v.input {
+					log.Fatalf("Expected %d metrics, got %d", v.input, len(metrics))
+				}
+			}
+		})
+
+		// This does not work with metrics because of the composite primary key
+		// b.Run(fmt.Sprintf("GORM batch input_size_%d", v.input), func(b *testing.B) {
+		// 	for n := 0; n < b.N; n++ {
+		// 		metrics := make([]model.Metric, v.input)
+		// 		const batchSize = 1000
+		// 		batch := make([]model.Metric, batchSize)
+		// 		if err := db.Limit(v.input).FindInBatches(&batch, batchSize, func(tx *gorm.DB, batch int) error {
+		// 			return nil
+		// 		}).Error; err != nil {
+		// 			log.Fatalf("Query failed: %v", err)
+		// 		}
+
+		// 		if len(metrics) != v.input {
+		// 			log.Fatalf("Expected %d metrics, got %d", v.input, len(metrics))
+		// 		}
+		// 	}
+		// })
+
+		b.Run(fmt.Sprintf("SQLX rows input_size_%d", v.input), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				metrics := make([]model.Metric, 0, v.input)
+
+				rows, err := dbx.Queryx("SELECT * FROM metrics LIMIT $1", v.input)
+				if err != nil {
+					log.Fatalf("Query failed: %v", err)
+				}
+				defer rows.Close()
 
 				for rows.Next() {
 					var metric model.Metric
-					err = rows.StructScan(&metric)
-					metrics[idx] = &metric
-					idx += 1
+					if err := rows.StructScan(&metric); err != nil {
+						log.Fatalf("Failed to scan row: %v", err)
+					}
+					metrics = append(metrics, metric)
+				}
+
+				if len(metrics) != v.input {
+					log.Fatalf("Expected %d metrics, got %d", v.input, len(metrics))
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("SQLX slice input_size_%d", v.input), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				metrics := make([]model.Metric, v.input)
+
+				dbx.Select(&metrics, "SELECT * FROM metrics LIMIT $1", v.input)
+
+				if len(metrics) != v.input {
+					log.Fatalf("Expected %d metrics, got %d", v.input, len(metrics))
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("GORM rows with SQLX input_size_%d", v.input), func(b *testing.B) {
+			for n := 0; n < b.N; n++ {
+				metrics := make([]model.Metric, 0, v.input)
+
+				stmt := db.Session(&gorm.Session{DryRun: true}).Limit(v.input).Find(&metrics).Statement
+				rows, err := dbx.Queryx(stmt.SQL.String(), stmt.Vars...)
+				if err != nil {
+					log.Fatalf("Query failed: %v", err)
+				}
+				defer rows.Close()
+
+				for rows.Next() {
+					var metric model.Metric
+					if err := rows.StructScan(&metric); err != nil {
+						log.Fatalf("Failed to scan row: %v", err)
+					}
+					metrics = append(metrics, metric)
+				}
+
+				if len(metrics) != v.input {
+					log.Fatalf("Expected %d metrics, got %d", v.input, len(metrics))
 				}
 			}
 		})
