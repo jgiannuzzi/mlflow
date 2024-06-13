@@ -15,8 +15,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/sirupsen/logrus"
 
-	as "github.com/mlflow/mlflow/mlflow/go/pkg/artifacts/service"
-	ms "github.com/mlflow/mlflow/mlflow/go/pkg/model_registry/service"
 	ts "github.com/mlflow/mlflow/mlflow/go/pkg/tracking/service"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/config"
@@ -164,9 +162,7 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 		return nil, fmt.Errorf("could not create new tracking service: %w", err)
 	}
 
-	contract.RegisterMlflowServiceRoutes(mlflowService, parser, app)
-	contract.RegisterModelRegistryServiceRoutes(ms.ModelRegistryService, parser, app)
-	contract.RegisterMlflowArtifactsServiceRoutes(as.MlflowArtifactsService, parser, app)
+	contract.RegisterTrackingServiceRoutes(mlflowService, parser, app)
 
 	return app, nil
 }

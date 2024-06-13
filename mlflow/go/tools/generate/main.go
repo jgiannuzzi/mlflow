@@ -1,3 +1,4 @@
+//nolint:err113
 package main
 
 import (
@@ -79,7 +80,7 @@ func mkServiceInterfaceMethod(methodInfo discovery.MethodInfo) *ast.Field {
 }
 
 // Generate a service interface declaration.
-func mkServiceInterfaceNode(serviceInfo discovery.ServiceInfo) *ast.GenDecl {
+func mkServiceInterfaceNode(interfaceName string, serviceInfo discovery.ServiceInfo) *ast.GenDecl {
 	// We add one method to validate any of the input structs
 	methods := make([]*ast.Field, 0, len(serviceInfo.Methods))
 
@@ -95,7 +96,7 @@ func mkServiceInterfaceNode(serviceInfo discovery.ServiceInfo) *ast.GenDecl {
 		Tok: token.TYPE, // Specifies a type declaration
 		Specs: []ast.Spec{
 			&ast.TypeSpec{
-				Name: ast.NewIdent(serviceInfo.Name), // Interface name
+				Name: ast.NewIdent(interfaceName),
 				Type: &ast.InterfaceType{
 					Methods: &ast.FieldList{
 						List: methods,
@@ -273,7 +274,7 @@ func mkAppRoute(method discovery.MethodInfo, endpoint discovery.Endpoint) ast.St
 	}
 }
 
-func mkRouteRegistrationFunction(serviceInfo discovery.ServiceInfo) *ast.FuncDecl {
+func mkRouteRegistrationFunction(interfaceName string, serviceInfo discovery.ServiceInfo) *ast.FuncDecl {
 	routes := make([]ast.Stmt, 0, len(serviceInfo.Methods))
 
 	for _, method := range serviceInfo.Methods {
@@ -286,11 +287,11 @@ func mkRouteRegistrationFunction(serviceInfo discovery.ServiceInfo) *ast.FuncDec
 	}
 
 	return &ast.FuncDecl{
-		Name: ast.NewIdent(fmt.Sprintf("Register%sRoutes", serviceInfo.Name)),
+		Name: ast.NewIdent(fmt.Sprintf("Register%sRoutes", interfaceName)),
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{
 				List: []*ast.Field{
-					mkNamedField("service", ast.NewIdent(serviceInfo.Name)),
+					mkNamedField("service", ast.NewIdent(interfaceName)),
 					mkNamedField("parser", ast.NewIdent("HTTPRequestParser")),
 					mkNamedField("app", mkStarExpr(ast.NewIdent("fiber.App"))),
 				},
@@ -304,34 +305,44 @@ func mkRouteRegistrationFunction(serviceInfo discovery.ServiceInfo) *ast.FuncDec
 
 // Generate the service interface and route registration functions.
 func generateServices(pkgFolder string) error {
-	decls := []ast.Decl{importStatements}
-
 	services, err := discovery.GetServiceInfos()
 	if err != nil {
 		return fmt.Errorf("could not get service info: %w", err)
 	}
 
 	for _, serviceInfo := range services {
-		decls = append(decls, mkServiceInterfaceNode(serviceInfo))
+		generationInfo, ok := ServiceInfoMap[serviceInfo.Name]
+		if !ok {
+			continue
+		}
+
+		decls := []ast.Decl{importStatements}
+		decls = append(decls, mkServiceInterfaceNode(
+			generationInfo.ServiceName,
+			serviceInfo,
+		))
+		decls = append(decls, mkRouteRegistrationFunction(generationInfo.ServiceName, serviceInfo))
+
+		// Set up the FileSet and the AST File
+		fset := token.NewFileSet()
+
+		pkg := "contract"
+
+		file := &ast.File{
+			Name:  ast.NewIdent(pkg),
+			Decls: decls,
+		}
+
+		fileName := generationInfo.FileNameWithoutExtension + ".g.go"
+		outputPath := filepath.Join(pkgFolder, pkg, fileName)
+
+		err := saveASTToFile(fset, file, true, outputPath)
+		if err != nil {
+			return fmt.Errorf("could not save AST to file: %w", err)
+		}
 	}
 
-	for _, serviceInfo := range services {
-		decls = append(decls, mkRouteRegistrationFunction(serviceInfo))
-	}
-
-	// Set up the FileSet and the AST File
-	fset := token.NewFileSet()
-
-	pkg := "contract"
-
-	file := &ast.File{
-		Name:  ast.NewIdent(pkg),
-		Decls: decls,
-	}
-
-	outputPath := filepath.Join(pkgFolder, pkg, "interface.g.go")
-
-	return saveASTToFile(fset, file, true, outputPath)
+	return nil
 }
 
 var jsonFieldTagRegexp = regexp.MustCompile(`json:"([^"]+)"`)
@@ -415,7 +426,6 @@ func addQueryAnnotations(pkgFolder string) error {
 	protoFolder := filepath.Join(pkgFolder, "protos")
 
 	if _, pathError := os.Stat(protoFolder); os.IsNotExist(pathError) {
-		//nolint:err113
 		return fmt.Errorf("the %s folder does not exist. Are the Go protobuf files generated?", protoFolder)
 	}
 

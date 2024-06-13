@@ -7,7 +7,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 )
 
-type MlflowService interface {
+type TrackingService interface {
 	CreateExperiment(input *protos.CreateExperiment) (*protos.CreateExperiment_Response, *Error)
 	GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *Error)
 	DeleteExperiment(input *protos.DeleteExperiment) (*protos.DeleteExperiment_Response, *Error)
@@ -15,12 +15,8 @@ type MlflowService interface {
 	SearchRuns(input *protos.SearchRuns) (*protos.SearchRuns_Response, *Error)
 	LogBatch(input *protos.LogBatch) (*protos.LogBatch_Response, *Error)
 }
-type ModelRegistryService interface {
-}
-type MlflowArtifactsService interface {
-}
 
-func RegisterMlflowServiceRoutes(service MlflowService, parser HTTPRequestParser, app *fiber.App) {
+func RegisterTrackingServiceRoutes(service TrackingService, parser HTTPRequestParser, app *fiber.App) {
 	app.Post("/mlflow/experiments/create", func(ctx *fiber.Ctx) error {
 		input := &protos.CreateExperiment{}
 		if err := parser.ParseBody(ctx, input); err != nil {
@@ -87,8 +83,4 @@ func RegisterMlflowServiceRoutes(service MlflowService, parser HTTPRequestParser
 		}
 		return ctx.JSON(output)
 	})
-}
-func RegisterModelRegistryServiceRoutes(service ModelRegistryService, parser HTTPRequestParser, app *fiber.App) {
-}
-func RegisterMlflowArtifactsServiceRoutes(service MlflowArtifactsService, parser HTTPRequestParser, app *fiber.App) {
 }

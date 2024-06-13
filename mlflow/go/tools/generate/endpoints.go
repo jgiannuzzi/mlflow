@@ -1,5 +1,25 @@
 package main
 
+type ServiceGenerationInfo struct {
+	FileNameWithoutExtension string
+	ServiceName              string
+}
+
+var ServiceInfoMap = map[string]ServiceGenerationInfo{
+	"MlflowService": {
+		FileNameWithoutExtension: "tracking",
+		ServiceName:              "TrackingService",
+	},
+	// "ModelRegistryService": {
+	// 	FileNameWithoutExtension: "model_registry",
+	// 	ServiceName:              "ModelRegistryService",
+	// },
+	// "MlflowArtifactsService": {
+	// 	FileNameWithoutExtension: "artifacts",
+	// 	ServiceName:              "ArtifactsService",
+	// },
+}
+
 var ImplementedEndpoints = map[string]any{
 	// "MlflowService_getExperimentByName",
 	"MlflowService_createExperiment": nil,
