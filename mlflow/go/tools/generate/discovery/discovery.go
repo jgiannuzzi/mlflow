@@ -45,7 +45,7 @@ func (e Endpoint) GetFiberPath() string {
 	return path
 }
 
-func GetServiceInfos() []ServiceInfo {
+func GetServiceInfos() ([]ServiceInfo, error) {
 	serviceInfos := make([]ServiceInfo, 0)
 
 	services := []struct {
@@ -62,7 +62,8 @@ func GetServiceInfos() []ServiceInfo {
 		serviceDescriptor := service.Descriptor.Services().ByName(protoreflect.Name(service.Name))
 
 		if serviceDescriptor == nil {
-			panic(fmt.Sprintf("Service %s not found", service.Name))
+			//nolint:goerr113
+			return nil, fmt.Errorf("service %s not found", service.Name)
 		}
 
 		serviceInfo := ServiceInfo{Name: service.Name, Methods: make([]MethodInfo, 0)}
@@ -92,5 +93,5 @@ func GetServiceInfos() []ServiceInfo {
 		serviceInfos = append(serviceInfos, serviceInfo)
 	}
 
-	return serviceInfos
+	return serviceInfos, nil
 }

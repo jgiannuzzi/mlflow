@@ -5,8 +5,9 @@ linters:
     - lll
   disable:
     - depguard
-    - gochecknoglobals # Immutable globals are fine
-    - exhaustruct # Often the case for protobuf generated code or gorm structs
+    - gochecknoglobals # Immutable globals are fine.
+    - exhaustruct # Often the case for protobuf generated code or gorm structs.
+    - protogetter # We do want to use pointers for memory optimization.
   presets:
     - bugs
     - comment

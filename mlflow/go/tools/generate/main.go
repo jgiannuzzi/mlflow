@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/iancoleman/strcase"
+
 	"github.com/mlflow/mlflow/mlflow/go/tools/generate/discovery"
 )
 
@@ -126,7 +127,6 @@ func saveASTToFile(fset *token.FileSet, file *ast.File, addComment bool, outputP
 
 	// Write the generated code to the file
 	err = format.Node(writer, fset, file)
-
 	if err != nil {
 		return fmt.Errorf("could not write generated AST to file: %w", err)
 	}
@@ -306,7 +306,11 @@ func mkRouteRegistrationFunction(serviceInfo discovery.ServiceInfo) *ast.FuncDec
 func generateServices(pkgFolder string) error {
 	decls := []ast.Decl{importStatements}
 
-	services := discovery.GetServiceInfos()
+	services, err := discovery.GetServiceInfos()
+	if err != nil {
+		return fmt.Errorf("could not get service info: %w", err)
+	}
+
 	for _, serviceInfo := range services {
 		decls = append(decls, mkServiceInterfaceNode(serviceInfo))
 	}
@@ -341,7 +345,7 @@ func addQueryAnnotation(generatedGoFile string) error {
 
 	node, err := parser.ParseFile(fset, generatedGoFile, nil, parser.ParseComments)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("add query annotation failed: %w", err)
 	}
 
 	// Create an AST inspector to modify specific struct tags
@@ -426,7 +430,6 @@ func addQueryAnnotations(pkgFolder string) error {
 
 		return err
 	})
-
 	if err != nil {
 		return fmt.Errorf("could not add query annotation: %w", err)
 	}

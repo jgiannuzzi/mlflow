@@ -11,6 +11,7 @@ type MlflowService interface {
 	CreateExperiment(input *protos.CreateExperiment) (*protos.CreateExperiment_Response, *Error)
 	GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *Error)
 	DeleteExperiment(input *protos.DeleteExperiment) (*protos.DeleteExperiment_Response, *Error)
+	CreateRun(input *protos.CreateRun) (*protos.CreateRun_Response, *Error)
 	SearchRuns(input *protos.SearchRuns) (*protos.SearchRuns_Response, *Error)
 	LogBatch(input *protos.LogBatch) (*protos.LogBatch_Response, *Error)
 }
@@ -48,6 +49,17 @@ func RegisterMlflowServiceRoutes(service MlflowService, parser HTTPRequestParser
 			return err
 		}
 		output, err := service.DeleteExperiment(input)
+		if err != nil {
+			return err
+		}
+		return ctx.JSON(output)
+	})
+	app.Post("/mlflow/runs/create", func(ctx *fiber.Ctx) error {
+		input := &protos.CreateRun{}
+		if err := parser.ParseBody(ctx, input); err != nil {
+			return err
+		}
+		output, err := service.CreateRun(input)
 		if err != nil {
 			return err
 		}

@@ -128,6 +128,15 @@ func (m MlflowService) LogBatch(input *protos.LogBatch) (*protos.LogBatch_Respon
 	return &protos.LogBatch_Response{}, nil
 }
 
+func (m MlflowService) CreateRun(input *protos.CreateRun) (*protos.CreateRun_Response, *contract.Error) {
+	run, err := m.Store.CreateRun(input)
+	if err != nil {
+		return nil, err
+	}
+
+	return &protos.CreateRun_Response{Run: run}, nil
+}
+
 func NewTrackingService(logger *logrus.Logger, config *config.Config) (*MlflowService, error) {
 	store, err := sql.NewSQLStore(logger, config)
 	if err != nil {

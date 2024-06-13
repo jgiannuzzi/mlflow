@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -110,7 +111,7 @@ func applyFilters(store *Store, transaction *gorm.DB, filter string) *contract.E
 		// The name column in the runs table is empty for runs logged in MLflow <= 1.29.0.
 		if key == "run_name" {
 			kind = &model.Tag{}
-			key = "mlflow.runName"
+			key = utils.TagRunName
 		}
 
 		isSqliteAndILike := store.db.Dialector.Name() == "sqlite" && comparison == "ILIKE"
@@ -356,4 +357,111 @@ func (s Store) SearchRuns(
 		Items:         contractRuns,
 		NextPageToken: nextPageToken,
 	}, nil
+}
+
+const RunIDMaxLength = 32
+
+const (
+	ArtifactFolderName  = "artifacts"
+	RunNameIntegerScale = 3
+	RunNameMaxLength    = 20
+)
+
+func ensureRunName(runModel *model.Run) *contract.Error {
+	var runNameFromTags string
+
+	for _, tag := range runModel.Tags {
+		if *tag.Key == utils.TagRunName {
+			runNameFromTags = *tag.Value
+
+			break
+		}
+	}
+
+	if utils.IsNotNilOrEmptyString(runModel.Name) && runNameFromTags != "" && *runModel.Name != runNameFromTags {
+		return contract.NewError(
+			protos.ErrorCode_INVALID_PARAMETER_VALUE,
+			fmt.Sprintf(
+				"Both 'run_name' argument and 'mlflow.runName' tag are specified, but with \n"+
+					"different values (run_name=%q, mlflow.runName=%q).",
+				*runModel.Name,
+				runNameFromTags,
+			),
+		)
+	}
+
+	if utils.IsNilOrEmptyString(runModel.Name) {
+		randomName, err := utils.GenerateRandomName()
+		if err != nil {
+			return contract.NewErrorWith(
+				protos.ErrorCode_INTERNAL_ERROR,
+				"failed to generate random run name",
+				err,
+			)
+		}
+
+		runModel.Name = utils.PtrTo(randomName)
+	}
+
+	if runNameFromTags == "" {
+		runModel.Tags = append(runModel.Tags, model.Tag{
+			Key:   utils.PtrTo(utils.TagRunName),
+			Value: runModel.Name,
+		})
+	}
+
+	return nil
+}
+
+func (s Store) CreateRun(input *protos.CreateRun) (*protos.Run, *contract.Error) {
+	experiment, err := s.GetExperiment(input.GetExperimentId())
+	if err != nil {
+		return nil, err
+	}
+
+	if model.LifecycleStage(experiment.GetLifecycleStage()) != model.LifecycleStageActive {
+		return nil, contract.NewError(
+			protos.ErrorCode_INVALID_PARAMETER_VALUE,
+			fmt.Sprintf(
+				"The experiment %q must be in the 'active' state.\n"+
+					"Current state is %q.",
+				input.GetExperimentId(),
+				experiment.GetLifecycleStage(),
+			),
+		)
+	}
+
+	runModel := model.NewRunFromCreateRunProto(input)
+
+	artifactLocation, appendErr := url.JoinPath(
+		experiment.GetArtifactLocation(),
+		*runModel.ID,
+		ArtifactFolderName,
+	)
+	if appendErr != nil {
+		return nil, contract.NewError(
+			protos.ErrorCode_INTERNAL_ERROR,
+			"failed to append run ID to experiment artifact location",
+		)
+	}
+
+	runModel.ArtifactURI = &artifactLocation
+
+	errRunName := ensureRunName(runModel)
+	if errRunName != nil {
+		return nil, errRunName
+	}
+
+	if err := s.db.Create(&runModel).Error; err != nil {
+		return nil, contract.NewErrorWith(
+			protos.ErrorCode_INTERNAL_ERROR,
+			fmt.Sprintf(
+				"failed to create run for experiment_id %q",
+				input.GetExperimentId(),
+			),
+			err,
+		)
+	}
+
+	return runModel.ToProto(), nil
 }

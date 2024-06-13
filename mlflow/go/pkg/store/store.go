@@ -28,6 +28,8 @@ type MlflowStore interface {
 		metrics []*protos.Metric,
 		params []*protos.Param,
 		tags []*protos.RunTag) *contract.Error
+
+	CreateRun(input *protos.CreateRun) (*protos.Run, *contract.Error)
 }
 
 type PagedList[T any] struct {

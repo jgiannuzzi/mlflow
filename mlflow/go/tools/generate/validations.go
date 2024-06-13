@@ -24,4 +24,5 @@ var validations = map[string]string{
 	"Metric_Key":                        "required,max=250,validMetricParamOrTagName,pathIsUnique",
 	"Metric_Timestamp":                  "required",
 	"Metric_Value":                      "required",
+	"CreateRun_ExperimentId":            "required,stringAsPositiveInteger",
 }
