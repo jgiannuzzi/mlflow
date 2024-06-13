@@ -43,6 +43,10 @@ func (f FakeStore) LogBatch(
 	return nil
 }
 
+func (f FakeStore) CreateRun(_ *protos.CreateRun) (*protos.Run, *contract.Error) {
+	return nil, nil
+}
+
 func toPtr(s string) *string {
 	return &s
 }

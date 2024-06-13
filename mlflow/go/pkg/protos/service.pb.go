@@ -1564,7 +1564,7 @@ type CreateRun struct {
 	unknownFields protoimpl.UnknownFields
 
 	// ID of the associated experiment.
-	ExperimentId *string `protobuf:"bytes,1,opt,name=experiment_id,json=experimentId" json:"experiment_id,omitempty" query:"experiment_id"`
+	ExperimentId *string `protobuf:"bytes,1,opt,name=experiment_id,json=experimentId" json:"experiment_id,omitempty" query:"experiment_id" validate:"required,stringAsPositiveInteger"`
 	// ID of the user executing the run.
 	// This field is deprecated as of MLflow 1.0, and will be removed in a future
 	// MLflow release. Use 'mlflow.user' tag instead.

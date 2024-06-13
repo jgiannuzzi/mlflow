@@ -3,11 +3,15 @@ package sql
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
 	"github.com/gofiber/fiber/v2/log"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -356,4 +360,168 @@ func (s Store) SearchRuns(
 		Items:         contractRuns,
 		NextPageToken: nextPageToken,
 	}, nil
+}
+
+const RunIDMaxLength = 32
+
+func newRunID() *string {
+	uuid := uuid.New()
+	runID := uuid.String()
+	runID = strings.ToLower(runID)
+	runID = strings.ReplaceAll(runID, "-", "")
+
+	if len(runID) > RunIDMaxLength {
+		runID = runID[:RunIDMaxLength]
+	}
+
+	return &runID
+}
+
+// joins multiple POSIX paths, removing any leading slashes from subsequent paths.
+func joinPosixPathsAndAppendAbsoluteSuffixes(paths ...string) string {
+	for i := 1; i < len(paths); i++ {
+		paths[i] = strings.TrimPrefix(paths[i], "/")
+	}
+
+	return path.Join(paths...)
+}
+
+var ErrInvalidTraversalPath = errors.New("query string contains invalid traversal path")
+
+// appends the specified POSIX `paths` to the path component of the specified `uri`.
+func appendToURIPath(uri string, paths ...string) (string, error) {
+	joinedPath := joinPosixPathsAndAppendAbsoluteSuffixes(paths...)
+
+	parsedURI, err := url.Parse(uri)
+	if err != nil {
+		return "", fmt.Errorf("unable to parse uri %q: %w", uri, err)
+	}
+
+	// Validate query string not to contain any traversal path (../) before appending
+	// to the end of the path, otherwise they will be resolved as part of the path.
+	if strings.Contains(parsedURI.RawQuery, "../") {
+		return "", fmt.Errorf("raw query %q contains ../: %w", parsedURI.RawQuery, ErrInvalidTraversalPath)
+	}
+
+	if parsedURI.Scheme == "" {
+		// If the input URI does not define a scheme, we assume that it is a POSIX path
+		// and join it with the specified input paths.
+		return joinPosixPathsAndAppendAbsoluteSuffixes(uri, joinedPath), nil
+	}
+
+	prefix := ""
+	if !strings.HasPrefix(parsedURI.Path, "/") {
+		// For certain URI schemes (e.g., "file:"), url's unparse routine does
+		// not preserve the relative URI path component properly. In certain cases,
+		// urlunparse converts relative paths to absolute paths. We introduce this logic
+		// to circumvent urlunparse's erroneous conversion.
+		prefix = parsedURI.Scheme + ":"
+		parsedURI.Scheme = ""
+	}
+
+	newURIPath := joinPosixPathsAndAppendAbsoluteSuffixes(parsedURI.Path, joinedPath)
+	parsedURI.Path = newURIPath
+
+	return prefix + parsedURI.String(), nil
+}
+
+const (
+	ArtifactFolderName  = "artifacts"
+	RunNameIntegerScale = 3
+	RunNameMaxLength    = 20
+)
+
+func newRunName(input *protos.CreateRun, runModel *model.Run) *contract.Error {
+	runName := input.GetRunName()
+
+	var runNameFromTags string
+
+	for _, tag := range runModel.Tags {
+		if *tag.Key == "mlflow.runName" {
+			runNameFromTags = *tag.Value
+
+			break
+		}
+	}
+
+	if runName != "" && runNameFromTags != "" && runName != runNameFromTags {
+		return contract.NewError(
+			protos.ErrorCode_INVALID_PARAMETER_VALUE,
+			fmt.Sprintf(
+				"Both 'run_name' argument and 'mlflow.runName' tag are specified, but with \n"+
+					"different values (run_name=%q, mlflow.runName=%q).",
+				runName,
+				runNameFromTags,
+			),
+		)
+	}
+
+	if runName == "" {
+		runName = utils.GenerateRandomName("-", RunNameIntegerScale, RunNameMaxLength)
+	}
+
+	if runNameFromTags == "" {
+		runModel.Tags = append(runModel.Tags, model.Tag{
+			Key:   utils.PtrTo("mlflow.runName"),
+			Value: utils.PtrTo(runName),
+		})
+	}
+
+	runModel.Name = utils.PtrTo(runName)
+
+	return nil
+}
+
+func (s Store) CreateRun(input *protos.CreateRun) (*protos.Run, *contract.Error) {
+	experiment, err := s.GetExperiment(input.GetExperimentId())
+	if err != nil {
+		return nil, err
+	}
+
+	if model.LifecycleStage(experiment.GetLifecycleStage()) != model.LifecycleStageActive {
+		return nil, contract.NewError(
+			protos.ErrorCode_INVALID_PARAMETER_VALUE,
+			fmt.Sprintf(
+				"The experiment %q must be in the 'active' state.\n"+
+					"Current state is %q.",
+				input.GetExperimentId(),
+				experiment.GetLifecycleStage(),
+			),
+		)
+	}
+
+	runModel := model.NewRunFromProto(input)
+	runModel.ID = newRunID()
+	artifactLocation, appendErr := appendToURIPath(
+		experiment.GetArtifactLocation(),
+		*runModel.ID,
+		ArtifactFolderName,
+	)
+
+	if appendErr != nil {
+		return nil, contract.NewError(
+			protos.ErrorCode_INTERNAL_ERROR,
+			"failed to append run ID to experiment artifact location",
+		)
+	}
+
+	runModel.ArtifactURI = &artifactLocation
+
+	errRunName := newRunName(input, runModel)
+	if errRunName != nil {
+		return nil, errRunName
+	}
+
+	if err := s.db.Create(&runModel).Error; err != nil {
+		return nil, contract.NewErrorWith(
+			protos.ErrorCode_INTERNAL_ERROR,
+			fmt.Sprintf(
+				"failed to create run for experiment_id %q",
+				input.GetExperimentId(),
+			),
+			err,
+		)
+	}
+
+	return runModel.ToProto(), nil
 }

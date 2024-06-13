@@ -19,10 +19,10 @@ func (t Tag) ToProto() *protos.RunTag {
 	}
 }
 
-func NewTagFromProto(runID string, proto *protos.RunTag) Tag {
+func NewTagFromProto(runID *string, proto *protos.RunTag) Tag {
 	return Tag{
 		Key:   utils.PtrTo(proto.GetKey()),
 		Value: utils.PtrTo(proto.GetValue()),
-		RunID: &runID,
+		RunID: runID,
 	}
 }

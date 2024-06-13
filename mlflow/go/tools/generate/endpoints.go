@@ -8,7 +8,7 @@ var ImplementedEndpoints = map[string]any{
 	"MlflowService_deleteExperiment": nil,
 	// "MlflowService_restoreExperiment",
 	// "MlflowService_updateExperiment",
-	// "MlflowService_createRun",
+	"MlflowService_createRun": nil,
 	// "MlflowService_updateRun",
 	// "MlflowService_deleteRun",
 	// "MlflowService_restoreRun",
