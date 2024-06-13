@@ -158,7 +158,7 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 
 	mlflowService, err := service.NewTrackingService(logger, cfg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create new tracking service: %w", err)
 	}
 
 	contract.RegisterMlflowServiceRoutes(mlflowService, parser, app)

@@ -93,18 +93,18 @@ func (r Run) ToProto() *protos.Run {
 	}
 }
 
-func NewRunFromProto(run *protos.CreateRun) *Run {
+func NewRunFromCreateRunProto(run *protos.CreateRun) *Run {
 	tags := make([]Tag, 0, len(run.GetTags()))
 	for _, tag := range run.GetTags() {
 		tags = append(tags, NewTagFromProto(nil, tag))
 	}
 
-	//nolint:exhaustruct
 	return &Run{
-		Name:         utils.PtrTo(run.GetRunName()),
+		ID:           utils.NewUUID(),
+		Name:         run.RunName,
 		ExperimentID: utils.ConvertStringToInt32Pointer(run.GetExperimentId()),
-		StartTime:    utils.PtrTo(run.GetStartTime()),
-		UserID:       utils.PtrTo(run.GetUserId()),
+		StartTime:    run.StartTime,
+		UserID:       run.UserId,
 		Tags:         tags,
 	}
 }

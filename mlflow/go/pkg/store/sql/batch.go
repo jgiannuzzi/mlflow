@@ -11,6 +11,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/store/sql/model"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
 )
 
 func checkRunIsActive(transaction *gorm.DB, runID string) *contract.Error {
@@ -62,9 +63,9 @@ func (s Store) setTagsWithTransaction(
 
 	for _, tag := range tags {
 		switch tag.GetKey() {
-		case "mlflow.user":
+		case utils.TagUser:
 			runColumns["user_id"] = tag.GetValue()
-		case "mlflow.runName":
+		case utils.TagRunName:
 			runColumns["name"] = tag.GetValue()
 		}
 	}
