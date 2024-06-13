@@ -3,6 +3,7 @@ package sql
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -27,6 +28,48 @@ var runOrder = regexp.MustCompile(
 
 type PageToken struct {
 	Offset int32 `json:"offset"`
+}
+
+func checkRunIsActive(transaction *gorm.DB, runID string) *contract.Error {
+	var lifecycleStage models.LifecycleStage
+
+	err := transaction.
+		Model(&models.Run{}).
+		Where("run_uuid = ?", runID).
+		Select("lifecycle_stage").
+		Scan(&lifecycleStage).
+		Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return contract.NewError(
+				protos.ErrorCode_RESOURCE_DOES_NOT_EXIST,
+				fmt.Sprintf("Run with id=%s not found", runID),
+			)
+		}
+
+		return contract.NewErrorWith(
+			protos.ErrorCode_INTERNAL_ERROR,
+			fmt.Sprintf(
+				"failed to get lifecycle stage for run %q",
+				runID,
+			),
+			err,
+		)
+	}
+
+	if lifecycleStage != models.LifecycleStageActive {
+		return contract.NewError(
+			protos.ErrorCode_INVALID_PARAMETER_VALUE,
+			fmt.Sprintf(
+				"The run %s must be in the 'active' state.\n"+
+					"Current state is %v.",
+				runID,
+				lifecycleStage,
+			),
+		)
+	}
+
+	return nil
 }
 
 func getLifecyleStages(runViewType protos.ViewType) []models.LifecycleStage {
@@ -464,4 +507,46 @@ func (s TrackingSQLStore) CreateRun(input *protos.CreateRun) (*protos.Run, *cont
 	}
 
 	return runModel.ToProto(), nil
+}
+
+func (s TrackingSQLStore) LogBatch(
+	runID string, metrics []*protos.Metric, params []*protos.Param, tags []*protos.RunTag,
+) *contract.Error {
+	err := s.db.Transaction(func(transaction *gorm.DB) error {
+		contractError := checkRunIsActive(transaction, runID)
+		if contractError != nil {
+			return contractError
+		}
+
+		err := s.setTagsWithTransaction(transaction, runID, tags)
+		if err != nil {
+			return fmt.Errorf("error setting tags for run_id %q: %w", runID, err)
+		}
+
+		contractError = s.logParamsWithTransaction(transaction, runID, params)
+		if contractError != nil {
+			return contractError
+		}
+
+		contractError = s.logMetricsWithTransaction(transaction, runID, metrics)
+		if contractError != nil {
+			return contractError
+		}
+
+		return nil
+	})
+	if err != nil {
+		var contractError *contract.Error
+		if errors.As(err, &contractError) {
+			return contractError
+		}
+
+		return contract.NewErrorWith(
+			protos.ErrorCode_INTERNAL_ERROR,
+			fmt.Sprintf("log batch transaction failed for %q", runID),
+			err,
+		)
+	}
+
+	return nil
 }
