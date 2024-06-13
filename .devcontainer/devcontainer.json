@@ -26,6 +26,7 @@
         "go.lintTool": "golangci-lint",
         "go.useLanguageServer": true,
         "gopls": {
+          "formatting.local": "github.com/mlflow/mlflow",
           "formatting.gofumpt": true
         },
         "python.defaultInterpreterPath": "/usr/local/bin/python",
