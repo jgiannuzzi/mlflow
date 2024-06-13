@@ -56,7 +56,7 @@ func checkRunIsActive(transaction *gorm.DB, runID string) *contract.Error {
 	return nil
 }
 
-func (s Store) setTagsWithTransaction(
+func (s TrackingSQLStore) setTagsWithTransaction(
 	transaction *gorm.DB, runID string, tags []*protos.RunTag,
 ) error {
 	runColumns := make(map[string]interface{})
@@ -144,7 +144,7 @@ func verifyBatchParamsInserts(
 	return nil
 }
 
-func (s Store) logParamsWithTransaction(
+func (s TrackingSQLStore) logParamsWithTransaction(
 	transaction *gorm.DB, runID string, params []*protos.Param,
 ) *contract.Error {
 	deduplicatedParamsMap := make(map[string]string, len(params))
@@ -308,7 +308,7 @@ func updateLatestMetricsIfNecessary(transaction *gorm.DB, runID string, metrics 
 	return nil
 }
 
-func (s Store) logMetricsWithTransaction(
+func (s TrackingSQLStore) logMetricsWithTransaction(
 	transaction *gorm.DB, runID string, metrics []*protos.Metric,
 ) *contract.Error {
 	// Duplicate metric values are eliminated
@@ -344,7 +344,7 @@ func (s Store) logMetricsWithTransaction(
 	return nil
 }
 
-func (s Store) LogBatch(
+func (s TrackingSQLStore) LogBatch(
 	runID string, metrics []*protos.Metric, params []*protos.Param, tags []*protos.RunTag,
 ) *contract.Error {
 	err := s.db.Transaction(func(transaction *gorm.DB) error {

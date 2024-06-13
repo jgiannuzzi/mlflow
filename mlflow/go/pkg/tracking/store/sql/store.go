@@ -17,12 +17,12 @@ import (
 	_ "github.com/ncruces/go-sqlite3/embed" // embed sqlite3 driver
 )
 
-type Store struct {
+type TrackingSQLStore struct {
 	config *config.Config
 	db     *gorm.DB
 }
 
-func NewSQLStore(logger *logrus.Logger, config *config.Config) (*Store, error) {
+func NewTrackingSQLStore(logger *logrus.Logger, config *config.Config) (*TrackingSQLStore, error) {
 	uri, err := url.Parse(config.StoreURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse store URL %q: %w", config.StoreURL, err)
@@ -56,5 +56,5 @@ func NewSQLStore(logger *logrus.Logger, config *config.Config) (*Store, error) {
 		return nil, fmt.Errorf("failed to connect to database %q: %w", uri.String(), err)
 	}
 
-	return &Store{config: config, db: database}, nil
+	return &TrackingSQLStore{config: config, db: database}, nil
 }

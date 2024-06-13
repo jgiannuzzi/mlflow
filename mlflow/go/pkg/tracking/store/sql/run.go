@@ -75,7 +75,7 @@ func getOffset(pageToken string) (int, *contract.Error) {
 }
 
 //nolint:funlen,cyclop,gocognit
-func applyFilters(store *Store, transaction *gorm.DB, filter string) *contract.Error {
+func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) *contract.Error {
 	filterConditions, err := query.ParseFilter(filter)
 	if err != nil {
 		return contract.NewErrorWith(
@@ -208,7 +208,7 @@ func applyFilters(store *Store, transaction *gorm.DB, filter string) *contract.E
 }
 
 //nolint:funlen, cyclop
-func applyOrderBy(store *Store, transaction *gorm.DB, orderBy []string) *contract.Error {
+func applyOrderBy(store *TrackingSQLStore, transaction *gorm.DB, orderBy []string) *contract.Error {
 	startTimeOrder := false
 
 	for index, orderByClause := range orderBy {
@@ -297,7 +297,7 @@ func mkNextPageToken(runLength, maxResults, offset int) (*string, *contract.Erro
 	return nextPageToken, nil
 }
 
-func (s Store) SearchRuns(
+func (s TrackingSQLStore) SearchRuns(
 	experimentIDs []string, filter string,
 	runViewType protos.ViewType, maxResults int, orderBy []string, pageToken string,
 ) (*store.PagedList[*protos.Run], *contract.Error) {
@@ -413,7 +413,7 @@ func ensureRunName(runModel *models.Run) *contract.Error {
 	return nil
 }
 
-func (s Store) CreateRun(input *protos.CreateRun) (*protos.Run, *contract.Error) {
+func (s TrackingSQLStore) CreateRun(input *protos.CreateRun) (*protos.Run, *contract.Error) {
 	experiment, err := s.GetExperiment(input.GetExperimentId())
 	if err != nil {
 		return nil, err

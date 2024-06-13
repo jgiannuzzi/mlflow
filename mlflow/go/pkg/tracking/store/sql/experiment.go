@@ -15,7 +15,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
 )
 
-func (s Store) GetExperiment(id string) (*protos.Experiment, *contract.Error) {
+func (s TrackingSQLStore) GetExperiment(id string) (*protos.Experiment, *contract.Error) {
 	idInt, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
 		return nil, contract.NewErrorWith(
@@ -44,7 +44,7 @@ func (s Store) GetExperiment(id string) (*protos.Experiment, *contract.Error) {
 	return experiment.ToProto(), nil
 }
 
-func (s Store) CreateExperiment(input *protos.CreateExperiment) (string, *contract.Error) {
+func (s TrackingSQLStore) CreateExperiment(input *protos.CreateExperiment) (string, *contract.Error) {
 	experiment := models.NewExperimentFromProto(input)
 
 	if err := s.db.Transaction(func(transaction *gorm.DB) error {
@@ -78,7 +78,7 @@ func (s Store) CreateExperiment(input *protos.CreateExperiment) (string, *contra
 	return strconv.Itoa(int(*experiment.ID)), nil
 }
 
-func (s Store) DeleteExperiment(id string) *contract.Error {
+func (s TrackingSQLStore) DeleteExperiment(id string) *contract.Error {
 	idInt, err := strconv.ParseInt(id, 10, 32)
 	if err != nil {
 		return contract.NewErrorWith(

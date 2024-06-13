@@ -5,7 +5,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 )
 
-type Store interface {
+type TrackingStore interface {
 	// Get an experiment by the experiment ID.
 	// The experiment should contain the linked tags.
 	GetExperiment(id string) (*protos.Experiment, *contract.Error)

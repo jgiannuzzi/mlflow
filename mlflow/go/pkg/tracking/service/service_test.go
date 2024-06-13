@@ -67,7 +67,7 @@ func TestRelativeArtifactLocation(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			t.Parallel()
 
-			var store store.Store = FakeStore{}
+			var store store.TrackingStore = FakeStore{}
 			service := TrackingService{
 				Store: store,
 			}
