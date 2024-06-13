@@ -47,10 +47,10 @@ func NewMetricFromProto(runID string, metric *protos.Metric) *Metric {
 
 	return &Metric{
 		RunID:     utils.PtrTo(runID),
-		Key:       utils.PtrTo(metric.GetKey()),
+		Key:       metric.Key,
 		Value:     utils.PtrTo(value),
-		Timestamp: utils.PtrTo(metric.GetTimestamp()),
-		Step:      utils.PtrTo(metric.GetStep()),
+		Timestamp: metric.Timestamp,
+		Step:      metric.Step,
 		IsNan:     &isNaN,
 	}
 }

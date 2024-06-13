@@ -46,14 +46,14 @@ func NewExperimentFromProto(proto *protos.CreateExperiment) Experiment {
 	tags := make([]ExperimentTag, len(proto.GetTags()))
 	for i, tag := range proto.GetTags() {
 		tags[i] = ExperimentTag{
-			Key:   utils.PtrTo(tag.GetKey()),
-			Value: utils.PtrTo(tag.GetValue()),
+			Key:   tag.Key,
+			Value: tag.Value,
 		}
 	}
 
 	return Experiment{
-		Name:             utils.PtrTo(proto.GetName()),
-		ArtifactLocation: utils.PtrTo(proto.GetArtifactLocation()),
+		Name:             proto.Name,
+		ArtifactLocation: proto.ArtifactLocation,
 		LifecycleStage:   utils.PtrTo("active"),
 		CreationTime:     utils.PtrTo(time.Now().UnixMilli()),
 		LastUpdateTime:   utils.PtrTo(time.Now().UnixMilli()),

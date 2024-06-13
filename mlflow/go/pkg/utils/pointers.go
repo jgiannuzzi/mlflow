@@ -19,12 +19,12 @@ func ConvertInt32PointerToStringPointer(iPtr *int32) *string {
 	return &sValue
 }
 
-func ConvertStringToInt32Pointer(s string) *int32 {
-	if s == "" {
+func ConvertStringPointerToInt32Pointer(s *string) *int32 {
+	if s == nil {
 		return nil
 	}
 
-	iValue, err := strconv.ParseInt(s, 10, 32)
+	iValue, err := strconv.ParseInt(*s, 10, 32)
 	if err != nil {
 		return nil
 	}

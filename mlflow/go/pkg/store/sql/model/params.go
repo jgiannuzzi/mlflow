@@ -2,7 +2,6 @@ package model
 
 import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
-	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
 )
 
 // Param mapped from table <params>.
@@ -21,8 +20,8 @@ func (p Param) ToProto() *protos.Param {
 
 func NewParamFromProto(runID string, p *protos.Param) Param {
 	return Param{
-		Key:   utils.PtrTo(p.GetKey()),
-		Value: utils.PtrTo(p.GetValue()),
+		Key:   p.Key,
+		Value: p.Value,
 		RunID: &runID,
 	}
 }

@@ -2,7 +2,6 @@ package model
 
 import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
-	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
 )
 
 // Tag mapped from table <tags>.
@@ -21,8 +20,8 @@ func (t Tag) ToProto() *protos.RunTag {
 
 func NewTagFromProto(runID *string, proto *protos.RunTag) Tag {
 	return Tag{
-		Key:   utils.PtrTo(proto.GetKey()),
-		Value: utils.PtrTo(proto.GetValue()),
+		Key:   proto.Key,
+		Value: proto.Value,
 		RunID: runID,
 	}
 }

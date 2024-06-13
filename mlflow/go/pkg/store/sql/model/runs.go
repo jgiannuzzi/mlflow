@@ -102,7 +102,7 @@ func NewRunFromCreateRunProto(run *protos.CreateRun) *Run {
 	return &Run{
 		ID:           utils.NewUUID(),
 		Name:         run.RunName,
-		ExperimentID: utils.ConvertStringToInt32Pointer(run.GetExperimentId()),
+		ExperimentID: utils.ConvertStringPointerToInt32Pointer(run.ExperimentId),
 		StartTime:    run.StartTime,
 		UserID:       run.UserId,
 		Tags:         tags,
