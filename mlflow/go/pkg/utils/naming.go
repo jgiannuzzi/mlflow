@@ -4,10 +4,9 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"strings"
 )
 
-var generatorNouns = []string{
+var nouns = []string{
 	"ant", "ape", "asp", "auk", "bass", "bat", "bear", "bee", "bird", "boar",
 	"bug", "calf", "carp", "cat", "chimp", "cod", "colt", "conch", "cow",
 	"crab", "crane", "croc", "crow", "cub", "deer", "doe", "dog", "dolphin",
@@ -24,7 +23,7 @@ var generatorNouns = []string{
 	"vole", "wasp", "whale", "wolf", "worm", "wren", "yak", "zebra",
 }
 
-var generatorPredicates = []string{
+var predicates = []string{
 	"abundant", "able", "abrasive", "adorable", "adaptable", "adventurous",
 	"aged", "agreeable", "ambitious", "amazing", "amusing", "angry",
 	"auspicious", "awesome", "bald", "beautiful", "bemused", "bedecked", "big",
@@ -49,47 +48,24 @@ var generatorPredicates = []string{
 	"skittish", "silent", "smiling",
 }
 
-func randomInt(max int) int {
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+const numRange = 1000
+
+// GenerateRandomName generates random name for `run`.
+func GenerateRandomName() (string, error) {
+	predicateIndex, err := rand.Int(rand.Reader, big.NewInt(int64(len(predicates))))
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("error getting random integer number: %w", err)
 	}
 
-	return int(n.Int64())
-}
-
-const BaseTen = 10
-
-func generateString(sep string, integerScale int) string {
-	predicate := strings.ToLower(generatorPredicates[randomInt(len(generatorPredicates))])
-	noun := strings.ToLower(generatorNouns[randomInt(len(generatorNouns))])
-	num := randomInt(intPow(BaseTen, integerScale))
-
-	return fmt.Sprintf("%s%s%s%s%d", predicate, sep, noun, sep, num)
-}
-
-func intPow(base, exp int) int {
-	result := 1
-
-	for exp != 0 {
-		if exp%2 != 0 {
-			result *= base
-		}
-
-		exp /= 2
-		base *= base
+	nounIndex, err := rand.Int(rand.Reader, big.NewInt(int64(len(nouns))))
+	if err != nil {
+		return "", fmt.Errorf("error getting random integer number: %w", err)
 	}
 
-	return result
-}
-
-func GenerateRandomName(sep string, integerScale, maxLength int) string {
-	for i := 0; i < 10; i++ {
-		name := generateString(sep, integerScale)
-		if len(name) <= maxLength {
-			return name
-		}
+	num, err := rand.Int(rand.Reader, big.NewInt(numRange))
+	if err != nil {
+		return "", fmt.Errorf("error getting random integer number: %w", err)
 	}
 
-	return generateString(sep, integerScale)[:maxLength]
+	return fmt.Sprintf("%s-%s-%d", predicates[predicateIndex.Int64()], nouns[nounIndex.Int64()], num), nil
 }

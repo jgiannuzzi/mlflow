@@ -391,7 +391,16 @@ func ensureRunName(runModel *model.Run) *contract.Error {
 	}
 
 	if utils.IsNilOrEmptyString(runModel.Name) {
-		runModel.Name = utils.PtrTo(utils.GenerateRandomName("-", RunNameIntegerScale, RunNameMaxLength))
+		randomName, err := utils.GenerateRandomName()
+		if err != nil {
+			return contract.NewErrorWith(
+				protos.ErrorCode_INTERNAL_ERROR,
+				"failed to generate random run name",
+				err,
+			)
+		}
+
+		runModel.Name = utils.PtrTo(randomName)
 	}
 
 	if runNameFromTags == "" {
