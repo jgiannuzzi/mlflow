@@ -38,3 +38,8 @@ linters-settings:
   gofumpt:
     module-path: github.com/mlflow/mlflow
     extra-rules: true
+
+issues:
+  exclude-files:
+    - ".*\\.g\\.go$"
+    - ".*\\.pb\\.go$"

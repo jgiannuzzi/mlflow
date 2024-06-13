@@ -15,10 +15,13 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/sirupsen/logrus"
 
+	as "github.com/mlflow/mlflow/mlflow/go/pkg/artifacts/service"
+	ms "github.com/mlflow/mlflow/mlflow/go/pkg/model_registry/service"
+	ts "github.com/mlflow/mlflow/mlflow/go/pkg/tracking/service"
+
 	"github.com/mlflow/mlflow/mlflow/go/pkg/config"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
-	"github.com/mlflow/mlflow/mlflow/go/pkg/service"
 )
 
 func configureApp(loggerInstance *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
@@ -156,14 +159,14 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 		return nil, err
 	}
 
-	mlflowService, err := service.NewTrackingService(logger, cfg)
+	mlflowService, err := ts.NewTrackingService(logger, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new tracking service: %w", err)
 	}
 
 	contract.RegisterMlflowServiceRoutes(mlflowService, parser, app)
-	contract.RegisterModelRegistryServiceRoutes(service.ModelRegistryService, parser, app)
-	contract.RegisterMlflowArtifactsServiceRoutes(service.MlflowArtifactsService, parser, app)
+	contract.RegisterModelRegistryServiceRoutes(ms.ModelRegistryService, parser, app)
+	contract.RegisterMlflowArtifactsServiceRoutes(as.MlflowArtifactsService, parser, app)
 
 	return app, nil
 }
