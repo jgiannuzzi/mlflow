@@ -80,13 +80,15 @@ func mkServiceInterfaceMethod(methodInfo discovery.MethodInfo) *ast.Field {
 }
 
 // Generate a service interface declaration.
-func mkServiceInterfaceNode(interfaceName string, serviceInfo discovery.ServiceInfo) *ast.GenDecl {
+func mkServiceInterfaceNode(
+	endpoints map[string]any, interfaceName string, serviceInfo discovery.ServiceInfo,
+) *ast.GenDecl {
 	// We add one method to validate any of the input structs
 	methods := make([]*ast.Field, 0, len(serviceInfo.Methods))
 
 	for _, method := range serviceInfo.Methods {
 		endpointName := fmt.Sprintf("%s_%s", serviceInfo.Name, method.Name)
-		if _, ok := ImplementedEndpoints[endpointName]; ok {
+		if _, ok := endpoints[endpointName]; ok {
 			methods = append(methods, mkServiceInterfaceMethod(method))
 		}
 	}
@@ -274,13 +276,15 @@ func mkAppRoute(method discovery.MethodInfo, endpoint discovery.Endpoint) ast.St
 	}
 }
 
-func mkRouteRegistrationFunction(interfaceName string, serviceInfo discovery.ServiceInfo) *ast.FuncDecl {
+func mkRouteRegistrationFunction(
+	endpoints map[string]any, interfaceName string, serviceInfo discovery.ServiceInfo,
+) *ast.FuncDecl {
 	routes := make([]ast.Stmt, 0, len(serviceInfo.Methods))
 
 	for _, method := range serviceInfo.Methods {
 		for _, endpoint := range method.Endpoints {
 			endpointName := fmt.Sprintf("%s_%s", serviceInfo.Name, method.Name)
-			if _, ok := ImplementedEndpoints[endpointName]; ok {
+			if _, ok := endpoints[endpointName]; ok {
 				routes = append(routes, mkAppRoute(method, endpoint))
 			}
 		}
@@ -316,12 +320,21 @@ func generateServices(pkgFolder string) error {
 			continue
 		}
 
+		endpoints := make(map[string]any, len(ImplementedEndpoints))
+		for _, endpoint := range ImplementedEndpoints {
+			endpoints[endpoint] = nil
+		}
+
 		decls := []ast.Decl{importStatements}
 		decls = append(decls, mkServiceInterfaceNode(
+			endpoints,
 			generationInfo.ServiceName,
 			serviceInfo,
 		))
-		decls = append(decls, mkRouteRegistrationFunction(generationInfo.ServiceName, serviceInfo))
+		decls = append(
+			decls,
+			mkRouteRegistrationFunction(endpoints, generationInfo.ServiceName, serviceInfo),
+		)
 
 		// Set up the FileSet and the AST File
 		fset := token.NewFileSet()
