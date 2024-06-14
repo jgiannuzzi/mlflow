@@ -13,7 +13,7 @@ type Metric struct {
 	Value     *float64 `db:"value"     gorm:"column:value;primaryKey"`
 	Timestamp *int64   `db:"timestamp" gorm:"column:timestamp;primaryKey"`
 	RunID     *string  `db:"run_uuid"  gorm:"column:run_uuid;primaryKey"`
-	Step      *int64   `db:"step"      gorm:"column:step;primaryKey"`
+	Step      int64    `db:"step"      gorm:"column:step;primaryKey"`
 	IsNan     *bool    `db:"is_nan"    gorm:"column:is_nan;primaryKey"`
 }
 
@@ -22,7 +22,7 @@ func (m Metric) ToProto() *protos.Metric {
 		Key:       m.Key,
 		Value:     m.Value,
 		Timestamp: m.Timestamp,
-		Step:      m.Step,
+		Step:      utils.PtrTo(m.Step),
 	}
 }
 
@@ -45,12 +45,17 @@ func NewMetricFromProto(runID string, metric *protos.Metric) *Metric {
 		value = metric.GetValue()
 	}
 
+	var step int64
+	if metric.Step != nil {
+		step = *metric.Step
+	}
+
 	return &Metric{
 		RunID:     utils.PtrTo(runID),
 		Key:       metric.Key,
 		Value:     utils.PtrTo(value),
 		Timestamp: metric.Timestamp,
-		Step:      metric.Step,
+		Step:      step,
 		IsNan:     &isNaN,
 	}
 }

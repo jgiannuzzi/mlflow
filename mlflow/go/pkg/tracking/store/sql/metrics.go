@@ -63,9 +63,9 @@ func getLatestMetrics(transaction *gorm.DB, runID string, metricKeys []string) (
 }
 
 func isNewerMetric(a models.Metric, b models.LatestMetric) bool {
-	return *a.Step > *b.Step ||
-		(*a.Step == *b.Step && *a.Timestamp > *b.Timestamp) ||
-		(*a.Step == *b.Step && *a.Timestamp == *b.Timestamp && *a.Value > *b.Value)
+	return a.Step > b.Step ||
+		(a.Step == b.Step && *a.Timestamp > *b.Timestamp) ||
+		(a.Step == b.Step && *a.Timestamp == *b.Timestamp && *a.Value > *b.Value)
 }
 
 //nolint:cyclop
