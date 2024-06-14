@@ -30,6 +30,27 @@ type Run struct {
 	Inputs         []Input `gorm:"foreignKey:DestinationID"`
 }
 
+type RunStatus string
+
+const (
+	RunStatusRunnig    RunStatus = "RUNNING"
+	RunStatusScheduled RunStatus = "SCHEDULED"
+	RunStatusFinished  RunStatus = "FINISHED"
+	RunStatusFailed    RunStatus = "FAILED"
+	RunStatusKilled    RunStatus = "KILLED"
+)
+
+type SourceType string
+
+const (
+	SourceTypeNotebook SourceType = "NOTEBOOK"
+	SourceTypeJob      SourceType = "JOB"
+	SourceTypeProject  SourceType = "PROJECT"
+	SourceTypeLocal    SourceType = "LOCAL"
+	SourceTypeUnknown  SourceType = "UNKNOWN"
+	SourceTypeRecipe   SourceType = "RECIPE"
+)
+
 func RunStatusToProto(status *string) *protos.RunStatus {
 	if status == nil {
 		return nil
@@ -100,11 +121,14 @@ func NewRunFromCreateRunProto(run *protos.CreateRun) *Run {
 	}
 
 	return &Run{
-		ID:           utils.NewUUID(),
-		Name:         run.RunName,
-		ExperimentID: utils.ConvertStringPointerToInt32Pointer(run.ExperimentId),
-		StartTime:    run.StartTime,
-		UserID:       run.UserId,
-		Tags:         tags,
+		ID:             utils.NewUUID(),
+		Name:           run.RunName,
+		ExperimentID:   utils.ConvertStringPointerToInt32Pointer(run.ExperimentId),
+		StartTime:      run.StartTime,
+		UserID:         run.UserId,
+		Tags:           tags,
+		LifecycleStage: utils.PtrTo(string(LifecycleStageActive)),
+		Status:         utils.PtrTo(string(RunStatusRunnig)),
+		SourceType:     utils.PtrTo(string(SourceTypeUnknown)),
 	}
 }
