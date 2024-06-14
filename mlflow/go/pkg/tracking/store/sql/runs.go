@@ -118,7 +118,7 @@ func getOffset(pageToken string) (int, *contract.Error) {
 }
 
 //nolint:funlen,cyclop,gocognit
-func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) *contract.Error {
+func applyFilter(database, transaction *gorm.DB, filter string) *contract.Error {
 	filterConditions, err := query.ParseFilter(filter)
 	if err != nil {
 		return contract.NewErrorWith(
@@ -157,7 +157,7 @@ func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) 
 			key = utils.TagRunName
 		}
 
-		isSqliteAndILike := store.db.Dialector.Name() == "sqlite" && comparison == "ILIKE"
+		isSqliteAndILike := database.Dialector.Name() == "sqlite" && comparison == "ILIKE"
 		table := fmt.Sprintf("filter_%d", index)
 
 		switch {
@@ -198,7 +198,7 @@ func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) 
 
 			transaction.Joins(
 				fmt.Sprintf("JOIN (?) AS %s ON runs.run_uuid = %s.run_uuid", table, table),
-				store.db.Select("inputs.destination_id AS run_uuid").
+				database.Select("inputs.destination_id AS run_uuid").
 					Joins(
 						"JOIN input_tags ON inputs.input_uuid = input_tags.input_uuid"+
 							" AND input_tags.name = 'mlflow.data.context'"+
@@ -228,7 +228,7 @@ func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) 
 
 			transaction.Joins(
 				fmt.Sprintf("JOIN (?) AS %s ON runs.experiment_id = %s.experiment_id", table, table),
-				store.db.Select("experiment_id", key).Where(where, value).Model(kind),
+				database.Select("experiment_id", key).Where(where, value).Model(kind),
 			)
 		default:
 			where := fmt.Sprintf("value %s ?", comparison)
@@ -242,7 +242,7 @@ func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) 
 
 			transaction.Joins(
 				fmt.Sprintf("JOIN (?) AS %s ON runs.run_uuid = %s.run_uuid", table, table),
-				store.db.Select("run_uuid", "value").Where("key = ?", key).Where(where, value).Model(kind),
+				database.Select("run_uuid", "value").Where("key = ?", key).Where(where, value).Model(kind),
 			)
 		}
 	}
@@ -251,7 +251,7 @@ func applyFilters(store *TrackingSQLStore, transaction *gorm.DB, filter string) 
 }
 
 //nolint:funlen, cyclop
-func applyOrderBy(store *TrackingSQLStore, transaction *gorm.DB, orderBy []string) *contract.Error {
+func applyOrderBy(database, transaction *gorm.DB, orderBy []string) *contract.Error {
 	startTimeOrder := false
 
 	for index, orderByClause := range orderBy {
@@ -294,7 +294,7 @@ func applyOrderBy(store *TrackingSQLStore, transaction *gorm.DB, orderBy []strin
 			table := fmt.Sprintf("order_%d", index)
 			transaction.Joins(
 				fmt.Sprintf("LEFT OUTER JOIN (?) AS %s ON runs.run_uuid = %s.run_uuid", table, table),
-				store.db.Select("run_uuid", "value").Where("key = ?", column).Model(kind),
+				database.Select("run_uuid", "value").Where("key = ?", column).Model(kind),
 			)
 
 			column = table + ".value"
@@ -360,13 +360,13 @@ func (s TrackingSQLStore) SearchRuns(
 	transaction.Offset(offset)
 
 	// Filter
-	contractError = applyFilters(&s, transaction, filter)
+	contractError = applyFilter(s.db, transaction, filter)
 	if contractError != nil {
 		return nil, contractError
 	}
 
 	// OrderBy
-	contractError = applyOrderBy(&s, transaction, orderBy)
+	contractError = applyOrderBy(s.db, transaction, orderBy)
 	if contractError != nil {
 		return nil, contractError
 	}
