@@ -1,4 +1,4 @@
-package server_test
+package validation_test
 
 import (
 	"errors"
@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
-	"github.com/mlflow/mlflow/mlflow/go/pkg/server"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/validation"
 )
 
 type PositiveInteger struct {
@@ -25,7 +25,7 @@ type validationScenario struct {
 func runscenarios(t *testing.T, scenarios []validationScenario) {
 	t.Helper()
 
-	validator, err := server.NewValidator()
+	validator, err := validation.NewValidator()
 	require.NoError(t, err)
 
 	for _, scenario := range scenarios {
@@ -128,7 +128,7 @@ func TestUniqueParamsInLogBatch(t *testing.T) {
 		},
 	}
 
-	validator, err := server.NewValidator()
+	validator, err := validation.NewValidator()
 	require.NoError(t, err)
 
 	err = validator.Struct(logBatchRequest)
@@ -145,7 +145,7 @@ func TestEmptyParamsInLogBatch(t *testing.T) {
 		Params: make([]*protos.Param, 0),
 	}
 
-	validator, err := server.NewValidator()
+	validator, err := validation.NewValidator()
 	require.NoError(t, err)
 
 	err = validator.Struct(logBatchRequest)
@@ -157,7 +157,7 @@ func TestEmptyParamsInLogBatch(t *testing.T) {
 func TestMissingTimestampInNestedMetric(t *testing.T) {
 	t.Parallel()
 
-	serverValidator, err := server.NewValidator()
+	serverValidator, err := validation.NewValidator()
 	require.NoError(t, err)
 
 	logBatch := protos.LogBatch{

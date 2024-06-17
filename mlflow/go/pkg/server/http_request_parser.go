@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/validation"
 )
 
 type HTTPRequestParser struct {
@@ -20,9 +19,9 @@ type HTTPRequestParser struct {
 }
 
 func NewHTTPRequestParser() (*HTTPRequestParser, error) {
-	validator, err := NewValidator()
+	validator, err := validation.NewValidator()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create validator: %w", err)
 	}
 
 	return &HTTPRequestParser{
@@ -46,7 +45,7 @@ func (p *HTTPRequestParser) ParseBody(ctx *fiber.Ctx, input interface{}) *contra
 	}
 
 	if err := p.validator.Struct(input); err != nil {
-		return newErrorFromValidationError(err)
+		return validation.NewErrorFromValidationError(err)
 	}
 
 	return nil
@@ -58,56 +57,8 @@ func (p *HTTPRequestParser) ParseQuery(ctx *fiber.Ctx, input interface{}) *contr
 	}
 
 	if err := p.validator.Struct(input); err != nil {
-		return newErrorFromValidationError(err)
+		return validation.NewErrorFromValidationError(err)
 	}
 
 	return nil
-}
-
-func dereference(value interface{}) interface{} {
-	valueOf := reflect.ValueOf(value)
-	if valueOf.Kind() == reflect.Ptr {
-		if valueOf.IsNil() {
-			return ""
-		}
-
-		return valueOf.Elem().Interface()
-	}
-
-	return value
-}
-
-func newErrorFromValidationError(err error) *contract.Error {
-	var ve validator.ValidationErrors
-	if errors.As(err, &ve) {
-		validationErrors := make([]string, 0)
-
-		for _, err := range ve {
-			field := err.Field()
-			tag := err.Tag()
-			value := dereference(err.Value())
-
-			switch tag {
-			case "required":
-				validationErrors = append(
-					validationErrors,
-					fmt.Sprintf("Missing value for required parameter '%s'", field),
-				)
-			default:
-				formattedValue, err := json.Marshal(value)
-				if err != nil {
-					formattedValue = []byte(fmt.Sprintf("%v", value))
-				}
-
-				validationErrors = append(
-					validationErrors,
-					fmt.Sprintf("Invalid value %s for parameter '%s' supplied", formattedValue, field),
-				)
-			}
-		}
-
-		return contract.NewError(protos.ErrorCode_INVALID_PARAMETER_VALUE, strings.Join(validationErrors, ", "))
-	}
-
-	return contract.NewError(protos.ErrorCode_INTERNAL_ERROR, err.Error())
 }
