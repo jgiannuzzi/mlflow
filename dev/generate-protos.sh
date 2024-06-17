@@ -76,6 +76,3 @@ python ./dev/proto_to_graphql/code_generator.py
 
 # Generate the Go interfaces
 go run ./mlflow/go/tools/generate ./mlflow/go/pkg
-
-# Generate Go interface mocks
-mockery --config ./mlflow/go/.mockery.yaml
