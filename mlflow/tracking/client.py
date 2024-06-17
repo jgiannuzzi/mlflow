@@ -37,8 +37,9 @@ from mlflow.entities import (
 )
 from mlflow.entities.model_registry import ModelVersion, RegisteredModel
 from mlflow.entities.model_registry.model_version_stages import ALL_STAGES
-from mlflow.entities.span import LiveSpan, NoOpSpan
-from mlflow.environment_variables import _MLFLOW_TESTING, MLFLOW_ENABLE_ASYNC_LOGGING
+from mlflow.entities.span import NO_OP_SPAN_REQUEST_ID, NoOpSpan, create_mlflow_span
+from mlflow.entities.trace_status import TraceStatus
+from mlflow.environment_variables import MLFLOW_ENABLE_ASYNC_LOGGING
 from mlflow.exceptions import MlflowException
 from mlflow.protos.databricks_pb2 import (
     BAD_REQUEST,
@@ -55,10 +56,14 @@ from mlflow.store.model_registry import (
     SEARCH_REGISTERED_MODEL_MAX_RESULTS_DEFAULT,
 )
 from mlflow.store.tracking import SEARCH_MAX_RESULTS_DEFAULT, SEARCH_TRACES_DEFAULT_MAX_RESULTS
-from mlflow.tracing.constant import TRACE_REQUEST_ID_PREFIX, SpanAttributeKey
+from mlflow.tracing.constant import (
+    TRACE_REQUEST_ID_PREFIX,
+    SpanAttributeKey,
+    TraceTagKey,
+)
 from mlflow.tracing.display import get_display_handler
 from mlflow.tracing.trace_manager import InMemoryTraceManager
-from mlflow.tracing.utils import get_otel_attribute
+from mlflow.tracing.utils import exclude_immutable_tags, get_otel_attribute
 from mlflow.tracking._model_registry import DEFAULT_AWAIT_MAX_SLEEP_SECONDS
 from mlflow.tracking._model_registry import utils as registry_utils
 from mlflow.tracking._model_registry.client import ModelRegistryClient
@@ -69,7 +74,10 @@ from mlflow.tracking.multimedia import Image, compress_image_size, convert_to_pi
 from mlflow.tracking.registry import UnsupportedModelRegistryStoreURIException
 from mlflow.utils.annotations import deprecated, experimental
 from mlflow.utils.async_logging.run_operations import RunOperations
-from mlflow.utils.databricks_utils import get_databricks_run_url
+from mlflow.utils.databricks_utils import (
+    get_databricks_run_url,
+    is_in_databricks_model_serving_environment,
+)
 from mlflow.utils.logging_utils import eprint
 from mlflow.utils.mlflow_tags import (
     MLFLOW_LOGGED_ARTIFACTS,
@@ -387,6 +395,7 @@ class MlflowClient:
     def _upload_trace_data(self, trace_info: TraceInfo, trace_data: TraceData) -> None:
         return self._tracking_client._upload_trace_data(trace_info, trace_data)
 
+    @experimental
     def delete_traces(
         self,
         experiment_id: str,
@@ -404,11 +413,38 @@ class MlflowClient:
             experiment_id: ID of the associated experiment.
             max_timestamp_millis: The maximum timestamp in milliseconds since the UNIX epoch for
                 deleting traces. Traces older than or equal to this timestamp will be deleted.
-            max_traces: The maximum number of traces to delete.
+            max_traces: The maximum number of traces to delete. If max_traces is specified, and
+                it is less than the number of traces that would be deleted based on the
+                max_timestamp_millis, the oldest traces will be deleted first.
             request_ids: A set of request IDs to delete.
 
         Returns:
             The number of traces deleted.
+
+        Example:
+
+        .. code-block:: python
+            :test:
+
+            import mlflow
+            import time
+
+            client = mlflow.MlflowClient()
+
+            # Delete all traces in the experiment
+            client.delete_traces(
+                experiment_id="0", max_timestamp_millis=time.time_ns() // 1_000_000
+            )
+
+            # Delete traces based on max_timestamp_millis and max_traces
+            # Older traces will be deleted first.
+            some_timestamp = time.time_ns() // 1_000_000
+            client.delete_traces(
+                experiment_id="0", max_timestamp_millis=some_timestamp, max_traces=2
+            )
+
+            # Delete traces based on request_ids
+            client.delete_traces(experiment_id="0", request_ids=["id_1", "id_2"])
         """
         return self._tracking_client.delete_traces(
             experiment_id=experiment_id,
@@ -417,7 +453,8 @@ class MlflowClient:
             request_ids=request_ids,
         )
 
-    def get_trace(self, request_id: str) -> Trace:
+    @experimental
+    def get_trace(self, request_id: str, display=True) -> Trace:
         """
         Get the trace matching the specified ``request_id``.
 
@@ -437,9 +474,11 @@ class MlflowClient:
             trace = client.get_trace(request_id)
         """
         trace = self._tracking_client.get_trace(request_id)
-        get_display_handler().display_traces([trace])
+        if display:
+            get_display_handler().display_traces([trace])
         return trace
 
+    @experimental
     def search_traces(
         self,
         experiment_ids: List[str],
@@ -521,22 +560,23 @@ class MlflowClient:
         Example:
 
         .. code-block:: python
+            :test:
 
-                from mlflow import MlflowClient
+            from mlflow import MlflowClient
 
-                client = MlflowClient()
+            client = MlflowClient()
 
-                root_span = client.start_trace("my_trace")
-                request_id = root_span.request_id
+            root_span = client.start_trace("my_trace")
+            request_id = root_span.request_id
 
-                # Create a child span
-                child_span = client.start_span(
-                    "child_span", request_id=request_id, parent_id=root_span.span_id
-                )
-                # Do something...
-                client.end_span(request_id=request_id, span_id=child_span.span_id)
+            # Create a child span
+            child_span = client.start_span(
+                "child_span", request_id=request_id, parent_id=root_span.span_id
+            )
+            # Do something...
+            client.end_span(request_id=request_id, span_id=child_span.span_id)
 
-                client.end_trace(request_id)
+            client.end_trace(request_id)
         """
         # Validate no active trace is set in the global context. If there is an active trace,
         # the span created by this method will be a child span under the active trace rather than
@@ -564,27 +604,40 @@ class MlflowClient:
                 name, experiment_id=experiment_id
             )
             request_id = get_otel_attribute(otel_span, SpanAttributeKey.REQUEST_ID)
+            mlflow_span = create_mlflow_span(otel_span, request_id, span_type)
 
-            mlflow_span = LiveSpan(otel_span, request_id, span_type)
+            # # If the span is a no-op span i.e. tracing is disabled, do nothing
+            if isinstance(mlflow_span, NoOpSpan):
+                return mlflow_span
+
             if inputs:
                 mlflow_span.set_inputs(inputs)
             if attributes:
                 mlflow_span.set_attributes(attributes)
             trace_manager = InMemoryTraceManager.get_instance()
-            # Update trace tags both in store and in-memory trace manager
-            self._tracking_client.set_trace_tags(request_id, tags or {})
-            trace_info = self._tracking_client.get_trace_info(request_id)
-            trace_manager.update_trace_info(trace_info)
+            tags = exclude_immutable_tags(tags or {})
+            if is_in_databricks_model_serving_environment():
+                # Update trace tags for trace in in-memory trace manager
+                with trace_manager.get_trace(request_id) as trace:
+                    trace.info.tags.update(tags)
+            else:
+                # Update trace tags in store and in-memory if tracking client is available
+                self._tracking_client.set_trace_tags(request_id, tags)
+                trace_info = self._tracking_client.get_trace_info(request_id)
+                trace_manager.update_trace_info(trace_info)
             # Register new span in the in-memory trace manager
             trace_manager.register_span(mlflow_span)
 
             return mlflow_span
         except Exception as e:
-            _logger.warning(f"Failed to start span {name}: {e}")
-            if _MLFLOW_TESTING.get():
-                raise
+            _logger.warning(
+                f"Failed to start trace {name}: {e}. "
+                "For full traceback, set logging level to debug.",
+                exc_info=_logger.isEnabledFor(logging.DEBUG),
+            )
             return NoOpSpan()
 
+    @experimental
     def end_trace(
         self,
         request_id: str,
@@ -612,23 +665,54 @@ class MlflowClient:
                 :py:class:`SpanStatusCode <mlflow.entities.SpanStatusCode>`
                 e.g. ``"OK"``, ``"ERROR"``. The default status is OK.
         """
+        # NB: If the specified request ID is of no-op span, this means something went wrong in
+        #     the span start logic. We should simply ignore it as the upstream should already
+        #     have logged the error.
+        if request_id == NO_OP_SPAN_REQUEST_ID:
+            return
+
         trace_manager = InMemoryTraceManager.get_instance()
         root_span_id = trace_manager.get_root_span_id(request_id)
 
         if root_span_id is None:
-            if self.get_trace(request_id=request_id):
-                raise MlflowException(
-                    f"Trace with ID {request_id} already finished.",
-                    error_code=INVALID_PARAMETER_VALUE,
-                )
-            else:
+            trace = self.get_trace(request_id=request_id)
+            if trace is None:
                 raise MlflowException(
                     f"Trace with ID {request_id} not found.",
                     error_code=RESOURCE_DOES_NOT_EXIST,
                 )
+            elif trace.info.status in TraceStatus.end_statuses():
+                raise MlflowException(
+                    f"Trace with ID {request_id} already finished.",
+                    error_code=INVALID_PARAMETER_VALUE,
+                )
 
         self.end_span(request_id, root_span_id, outputs, attributes, status)
 
+    def _upload_trace_spans_as_tag(self, trace_info: TraceInfo, trace_data: TraceData):
+        # When a trace is logged, we set a mlflow.traceSpans tag via SetTraceTag API
+        # https://databricks.atlassian.net/browse/ML-40306
+        parsed_spans = []
+        for span in trace_data.spans:
+            parsed_span = {}
+
+            parsed_span["name"] = span.name
+            parsed_span["type"] = span.get_attribute(SpanAttributeKey.SPAN_TYPE)
+            span_inputs = span.get_attribute(SpanAttributeKey.INPUTS)
+            if span_inputs and isinstance(span_inputs, dict):
+                parsed_span["inputs"] = list(span_inputs.keys())
+            span_outputs = span.get_attribute(SpanAttributeKey.OUTPUTS)
+            if span_outputs and isinstance(span_outputs, dict):
+                parsed_span["outputs"] = list(span_outputs.keys())
+
+            parsed_spans.append(parsed_span)
+
+        # Directly set the tag on the trace in the backend
+        self._tracking_client.set_trace_tag(
+            trace_info.request_id, TraceTagKey.TRACE_SPANS, json.dumps(parsed_spans)
+        )
+
+    @experimental
     def start_span(
         self,
         name: str,
@@ -672,6 +756,7 @@ class MlflowClient:
             conjunction with the fluent APIs like below:
 
             .. code-block:: python
+                :test:
 
                 import mlflow
                 from mlflow import MlflowClient
@@ -716,34 +801,39 @@ class MlflowClient:
         Example:
 
         .. code-block:: python
+            :test:
 
-                from mlflow import MlflowClient
+            from mlflow import MlflowClient
 
-                client = MlflowClient()
+            client = MlflowClient()
 
-                span = client.start_trace("my_trace")
+            span = client.start_trace("my_trace")
 
-                x = 2
+            x = 2
 
-                # Create a child span
-                child_span = client.start_span(
-                    "child_span",
-                    request_id=span.request_id,
-                    parent_id=span.id,
-                    inputs={"x": 2},
-                )
+            # Create a child span
+            child_span = client.start_span(
+                "child_span",
+                request_id=span.request_id,
+                parent_id=span.span_id,
+                inputs={"x": x},
+            )
 
-                y = x**2
+            y = x**2
 
-                client.end_span(
-                    request_id=child_span.request_id,
-                    span_id=child_span.span_id,
-                    attributes={"factor": 2},
-                    outputs={"y": y},
-                )
+            client.end_span(
+                request_id=child_span.request_id,
+                span_id=child_span.span_id,
+                attributes={"factor": 2},
+                outputs={"y": y},
+            )
 
-                client.end_trace(request_id)
+            client.end_trace(span.request_id)
         """
+        # If parent span is no-op span, the child should also be no-op too
+        if request_id == NO_OP_SPAN_REQUEST_ID:
+            return NoOpSpan()
+
         if not parent_id:
             raise MlflowException(
                 "start_span() must be called with an explicit parent_id."
@@ -766,7 +856,7 @@ class MlflowClient:
 
         try:
             otel_span = mlflow.tracing.provider.start_detached_span(name, parent=parent_span._span)
-            span = LiveSpan(otel_span, request_id, span_type)
+            span = create_mlflow_span(otel_span, request_id, span_type)
             if attributes:
                 span.set_attributes(attributes)
             if inputs:
@@ -775,11 +865,14 @@ class MlflowClient:
             trace_manager.register_span(span)
             return span
         except Exception as e:
-            _logger.warning(f"Failed to start span {name}: {e}")
-            if _MLFLOW_TESTING.get():
-                raise
+            _logger.warning(
+                f"Failed to start span {name}: {e}. "
+                "For full traceback, set logging level to debug.",
+                exc_info=_logger.isEnabledFor(logging.DEBUG),
+            )
             return NoOpSpan()
 
+    @experimental
     def end_span(
         self,
         request_id: str,
@@ -804,6 +897,9 @@ class MlflowClient:
                 :py:class:`SpanStatusCode <mlflow.entities.SpanStatusCode>`
                 e.g. ``"OK"``, ``"ERROR"``. The default status is OK.
         """
+        if request_id == NO_OP_SPAN_REQUEST_ID:
+            return
+
         trace_manager = InMemoryTraceManager.get_instance()
         span = trace_manager.get_span_from_id(request_id, span_id)
 
@@ -819,7 +915,14 @@ class MlflowClient:
             span.set_outputs(outputs)
         span.set_status(status)
 
-        span.end()
+        try:
+            span.end()
+        except Exception as e:
+            _logger.warning(
+                f"Failed to end span {span_id}: {e}. "
+                "For full traceback, set logging level to debug.",
+                exc_info=_logger.isEnabledFor(logging.DEBUG),
+            )
 
     def _start_tracked_trace(
         self,
@@ -869,6 +972,7 @@ class MlflowClient:
             tags=trace_info.tags or {},
         )
 
+    @experimental
     def set_trace_tag(self, request_id: str, key: str, value: str):
         """
         Set a tag on the trace with the given trace ID.
@@ -878,6 +982,7 @@ class MlflowClient:
         ``request_id`` parameter to set a tag on an already ended trace.
 
         .. code-block:: python
+            :test:
 
             from mlflow import MlflowClient
 
@@ -910,6 +1015,7 @@ class MlflowClient:
         # If the trace is not active, try to set the tag on the trace in the backend
         self._tracking_client.set_trace_tag(request_id, key, value)
 
+    @experimental
     def delete_trace_tag(self, request_id: str, key: str) -> None:
         """
         Delete a tag on the trace with the given trace ID.
@@ -919,6 +1025,7 @@ class MlflowClient:
         ``request_id`` parameter to delete a tag on an already ended trace.
 
         .. code-block:: python
+            :test:
 
             from mlflow import MlflowClient
 
@@ -2208,7 +2315,7 @@ class MlflowClient:
             image = image.to_pil()
         else:
             # Import PIL and check if the image is a PIL image
-            import PIL
+            import PIL.Image
 
             if not isinstance(image, PIL.Image.Image):
                 raise TypeError(

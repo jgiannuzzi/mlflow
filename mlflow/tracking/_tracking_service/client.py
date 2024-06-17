@@ -25,7 +25,12 @@ from mlflow.entities.dataset_input import DatasetInput
 from mlflow.entities.trace import Trace
 from mlflow.entities.trace_info import TraceInfo
 from mlflow.entities.trace_status import TraceStatus
-from mlflow.exceptions import MlflowException, MlflowTraceDataCorrupted, MlflowTraceDataNotFound
+from mlflow.exceptions import (
+    MlflowException,
+    MlflowTraceDataCorrupted,
+    MlflowTraceDataException,
+    MlflowTraceDataNotFound,
+)
 from mlflow.protos.databricks_pb2 import BAD_REQUEST, INVALID_PARAMETER_VALUE, ErrorCode
 from mlflow.store.artifact.artifact_repository_registry import get_artifact_repository
 from mlflow.store.entities.paged_list import PagedList
@@ -34,12 +39,13 @@ from mlflow.store.tracking import (
     SEARCH_MAX_RESULTS_DEFAULT,
     SEARCH_TRACES_DEFAULT_MAX_RESULTS,
 )
-from mlflow.tracing.utils import TraceJSONEncoder
+from mlflow.tracing.artifact_utils import get_artifact_uri_for_trace
+from mlflow.tracing.utils import TraceJSONEncoder, exclude_immutable_tags
 from mlflow.tracking._tracking_service import utils
 from mlflow.tracking.metric_value_conversion_utils import convert_metric_value_to_float_if_possible
 from mlflow.utils import chunk_list
 from mlflow.utils.async_logging.run_operations import RunOperations, get_combined_run_operations
-from mlflow.utils.mlflow_tags import MLFLOW_USER
+from mlflow.utils.mlflow_tags import IMMUTABLE_TAGS, MLFLOW_USER
 from mlflow.utils.string_utils import is_string_type
 from mlflow.utils.time import get_current_time_millis
 from mlflow.utils.uri import add_databricks_profile_info_to_artifact_uri
@@ -183,6 +189,7 @@ class TrackingServiceClient:
         Returns:
             The created TraceInfo object.
         """
+        tags = exclude_immutable_tags(tags or {})
         return self.store.start_trace(
             experiment_id=experiment_id,
             timestamp_ms=timestamp_ms,
@@ -214,6 +221,7 @@ class TrackingServiceClient:
         Returns:
             The updated TraceInfo object.
         """
+        tags = exclude_immutable_tags(tags or {})
         return self.store.end_trace(
             request_id=request_id,
             timestamp_ms=timestamp_ms,
@@ -310,11 +318,13 @@ class TrackingServiceClient:
             """
             try:
                 trace_data = self._download_trace_data(trace_info)
-            except (MlflowTraceDataNotFound, MlflowTraceDataCorrupted) as e:
-                _logger.debug(
-                    f"Failed to download trace data for trace with request_id={e.request_id}",
-                    trace_info.request_id,
-                    exc_info=True,
+            except MlflowTraceDataException as e:
+                _logger.warning(
+                    (
+                        f"Failed to download trace data for trace {trace_info.request_id!r} "
+                        f"with {e.ctx}. For full traceback, set logging level to DEBUG."
+                    ),
+                    exc_info=_logger.isEnabledFor(logging.DEBUG),
                 )
                 return None
             else:
@@ -349,6 +359,7 @@ class TrackingServiceClient:
             request_id: The ID of the trace.
             tags: A dictionary of key-value pairs.
         """
+        tags = exclude_immutable_tags(tags)
         for k, v in tags.items():
             self.set_trace_tag(request_id, k, v)
 
@@ -361,7 +372,10 @@ class TrackingServiceClient:
             key: The string key of the tag.
             value: The string value of the tag.
         """
-        self.store.set_trace_tag(request_id, key, str(value))
+        if key in IMMUTABLE_TAGS:
+            _logger.warning(f"Tag '{key}' is immutable and cannot be set on a trace.")
+        else:
+            self.store.set_trace_tag(request_id, key, str(value))
 
     def delete_trace_tag(self, request_id, key):
         """
@@ -371,7 +385,10 @@ class TrackingServiceClient:
             request_id: The ID of the trace.
             key: The string key of the tag.
         """
-        self.store.delete_trace_tag(request_id, key)
+        if key in IMMUTABLE_TAGS:
+            _logger.warning(f"Tag '{key}' is immutable and cannot be deleted on a trace.")
+        else:
+            self.store.delete_trace_tag(request_id, key)
 
     def search_experiments(
         self,
@@ -479,7 +496,6 @@ class TrackingServiceClient:
 
         """
         _validate_experiment_artifact_location(artifact_location)
-
         return self.store.create_experiment(
             name=name,
             artifact_location=artifact_location,
@@ -753,7 +769,7 @@ class TrackingServiceClient:
         self.store.record_logged_model(run_id, mlflow_model)
 
     def _get_artifact_repo_for_trace(self, trace_info: TraceInfo):
-        artifact_uri = next(v for k, v in trace_info.tags.items() if k == "mlflow.artifactLocation")
+        artifact_uri = get_artifact_uri_for_trace(trace_info)
         artifact_uri = add_databricks_profile_info_to_artifact_uri(artifact_uri, self.tracking_uri)
         return get_artifact_repository(artifact_uri)
 
@@ -866,6 +882,10 @@ class TrackingServiceClient:
         """
         end_time = end_time if end_time else get_current_time_millis()
         status = status if status else RunStatus.to_string(RunStatus.FINISHED)
+        # Tell the store to stop async logging: stop accepting new data and log already enqueued
+        # data in the background. This call is making sure every async logging data has been
+        # submitted for logging, but not necessarily finished logging.
+        self.store.end_async_logging()
         self.store.update_run_info(
             run_id,
             run_status=RunStatus.from_string(status),

@@ -1,16 +1,20 @@
+import json
 import logging
 import os
 import posixpath
 import tempfile
+import traceback
 from abc import ABC, ABCMeta, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mlflow.entities.file_info import FileInfo
 from mlflow.entities.multipart_upload import CreateMultipartUploadResponse, MultipartUploadPart
-from mlflow.environment_variables import MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR
-from mlflow.exceptions import MlflowException
+from mlflow.exceptions import MlflowException, MlflowTraceDataCorrupted, MlflowTraceDataNotFound
 from mlflow.protos.databricks_pb2 import INVALID_PARAMETER_VALUE, RESOURCE_DOES_NOT_EXIST
+from mlflow.tracing.artifact_utils import TRACE_DATA_FILE_NAME
 from mlflow.utils.annotations import developer_stable
 from mlflow.utils.async_logging.async_artifacts_logging_queue import AsyncArtifactsLoggingQueue
 from mlflow.utils.file_utils import ArtifactProgressBar, create_tmp_dir
@@ -254,12 +258,8 @@ class ArtifactRepository:
 
         # Wait for downloads to complete and collect failures
         failed_downloads = {}
+        tracebacks = {}
         with ArtifactProgressBar.files(desc="Downloading artifacts", total=len(futures)) as pbar:
-            if len(futures) >= 10 and pbar.pbar:
-                _logger.info(
-                    "The progress bar can be disabled by setting the environment "
-                    f"variable {MLFLOW_ENABLE_ARTIFACTS_PROGRESS_BAR} to false"
-                )
             for f in as_completed(futures):
                 try:
                     f.result()
@@ -267,11 +267,17 @@ class ArtifactRepository:
                 except Exception as e:
                     path = futures[f]
                     failed_downloads[path] = e
+                    tracebacks[path] = traceback.format_exc()
 
         if failed_downloads:
-            template = "##### File {path} #####\n{error}"
+            if _logger.isEnabledFor(logging.DEBUG):
+                template = "##### File {path} #####\n{error}\nTraceback:\n{traceback}\n"
+            else:
+                template = "##### File {path} #####\n{error}"
+
             failures = "\n".join(
-                template.format(path=path, error=error) for path, error in failed_downloads.items()
+                template.format(path=path, error=error, traceback=tracebacks[path])
+                for path, error in failed_downloads.items()
             )
             raise MlflowException(
                 message=(
@@ -321,7 +327,15 @@ class ArtifactRepository:
             - `MlflowTraceDataNotFound`: The trace data is not found.
             - `MlflowTraceDataCorrupted`: The trace data is corrupted.
         """
-        raise NotImplementedError
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_file = Path(temp_dir, TRACE_DATA_FILE_NAME)
+            try:
+                self._download_file(TRACE_DATA_FILE_NAME, temp_file)
+            except Exception as e:
+                # `MlflowTraceDataNotFound` is caught in `TrackingServiceClient.search_traces` and
+                # is used to filter out traces with failed trace data download.
+                raise MlflowTraceDataNotFound(artifact_path=TRACE_DATA_FILE_NAME) from e
+            return try_read_trace_data(temp_file)
 
     def upload_trace_data(self, trace_data: str) -> None:
         """
@@ -330,7 +344,29 @@ class ArtifactRepository:
         Args:
             trace_data: The json-serialized trace data to upload.
         """
-        raise NotImplementedError
+        with write_local_temp_trace_data_file(trace_data) as temp_file:
+            self.log_artifact(temp_file)
+
+
+@contextmanager
+def write_local_temp_trace_data_file(trace_data: str):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_file = Path(temp_dir, TRACE_DATA_FILE_NAME)
+        temp_file.write_text(trace_data)
+        yield temp_file
+
+
+def try_read_trace_data(trace_data_path):
+    if not os.path.exists(trace_data_path):
+        raise MlflowTraceDataNotFound(artifact_path=trace_data_path)
+    with open(trace_data_path) as f:
+        data = f.read()
+    if not data:
+        raise MlflowTraceDataNotFound(artifact_path=trace_data_path)
+    try:
+        return json.loads(data)
+    except json.decoder.JSONDecodeError as e:
+        raise MlflowTraceDataCorrupted(artifact_path=trace_data_path) from e
 
 
 class MultipartUploadMixin(ABC):
