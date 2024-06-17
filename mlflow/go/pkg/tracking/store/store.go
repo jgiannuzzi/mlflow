@@ -5,6 +5,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 )
 
+//go:generate mockery
 type TrackingStore interface {
 	// Get an experiment by the experiment ID.
 	// The experiment should contain the linked tags.
