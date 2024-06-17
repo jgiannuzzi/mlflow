@@ -106,13 +106,14 @@ func parseValidIdentifier(identifier string) (ValidIdentifier, error) {
 }
 
 const (
+	RunID   = "run_id"
 	RunName = "run_name"
 	Created = "created"
 )
 
 // This should be configurable and only applies to the runs table.
 var searchableRunAttributes = []string{
-	"run_id",
+	RunID,
 	"experiment_id",
 	RunName,
 	"user_id",
@@ -212,7 +213,7 @@ func validateDatasetValue(key string, value Value) (interface{}, error) {
 	case "name", "digest", "context":
 		if _, ok := value.(NumberExpr); ok {
 			return nil, NewValidationError(
-				"expected dataset.%s to be either a string or list of strings. Found %s",
+				"expected datasets.%s to be either a string or list of strings. Found %s",
 				key,
 				value,
 			)
@@ -277,7 +278,7 @@ func validateAttributeValue(key string, value Value) (interface{}, error) {
 
 		return value.value(), nil
 	default:
-		if _, ok := value.(StringListExpr); key != RunName && ok {
+		if _, ok := value.(StringListExpr); key != RunID && ok {
 			return nil, NewValidationError(
 				"only the 'run_id' attribute supports comparison with a list of quoted string values",
 			)
