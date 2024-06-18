@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/ncruces/go-sqlite3/gormlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
@@ -21,13 +22,13 @@ type testData struct {
 	expectedVars []any
 }
 
-var whitespaceRegex = regexp.MustCompile(`\s+`)
+var whitespaceRegex = regexp.MustCompile(`\s` + "|`")
 
 func removeWhitespace(s string) string {
 	return whitespaceRegex.ReplaceAllString(s, "")
 }
 
-var tests = []testData{
+var postgresTests = []testData{
 	{
 		name:  "simple metric query",
 		query: "metrics.accuracy > 0.72",
@@ -107,7 +108,27 @@ JOIN (
 	},
 }
 
-func TestSearchRuns(t *testing.T) {
+func assertTestData(t *testing.T, database *gorm.DB, testData testData) {
+	t.Helper()
+
+	transaction := database.Model(&models.Run{})
+
+	contractErr := sql.ApplyFilter(database, transaction, testData.query)
+	if contractErr != nil {
+		t.Fatal("contractErr: ", contractErr)
+	}
+
+	actualSQL := transaction.Select("ID").Find(&models.Run{}).Statement.SQL.String()
+
+	// if removeWhitespace(testData.expectedSQL) != removeWhitespace(actualSQL) {
+	// 	fmt.Println(actualSQL)
+	// }
+
+	assert.Equal(t, removeWhitespace(testData.expectedSQL), removeWhitespace(actualSQL))
+	assert.Equal(t, testData.expectedVars, transaction.Statement.Vars)
+}
+
+func TestSearchRunsInPostgres(t *testing.T) {
 	t.Parallel()
 
 	mockedDB, _, err := sqlmock.New()
@@ -120,22 +141,99 @@ func TestSearchRuns(t *testing.T) {
 
 	require.NoError(t, err)
 
-	for _, testData := range tests {
+	for _, testData := range postgresTests {
 		currentTestData := testData
 
 		t.Run(currentTestData.name, func(t *testing.T) {
 			t.Parallel()
-
-			transaction := database.Model(&models.Run{})
-
-			contractErr := sql.ApplyFilter(database, transaction, currentTestData.query)
-			if contractErr != nil {
-				t.Fatal("contractErr: ", contractErr)
-			}
-
-			actualSQL := transaction.Select("ID").Find(&models.Run{}).Statement.SQL.String()
-			assert.Equal(t, removeWhitespace(testData.expectedSQL), removeWhitespace(actualSQL))
-			assert.Equal(t, testData.expectedVars, transaction.Statement.Vars)
+			assertTestData(t, database, currentTestData)
 		})
+	}
+}
+
+var sqliteTests = []testData{
+	{
+		name:  "run_name query",
+		query: "attributes.run_name ILIKE 'my-run%'",
+		expectedSQL: `
+	SELECT run_uuid FROM runs
+	JOIN (SELECT run_uuid, value FROM tags
+	WHERE key = ? AND LOWER(value) LIKE ?)
+	AS filter_0 ON runs.run_uuid = filter_0.run_uuid
+	`,
+		expectedVars: []any{"mlflow.runName", "my-run%"},
+	},
+	{
+		name:  "datasets.context query",
+		query: "datasets.context ILIKE '%train'",
+		expectedSQL: `
+SELECT run_uuid FROM runs
+JOIN (
+	SELECT inputs.destination_id AS run_uuid FROM inputs
+	JOIN input_tags ON inputs.input_uuid = input_tags.input_uuid
+	AND input_tags.name = 'mlflow.data.context'
+	AND LOWER(input_tags.value) LIKE ? WHERE inputs.destination_type = 'RUN')
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid
+`,
+		expectedVars: []any{"%train"},
+	},
+	{
+		name:  "datasests.digest",
+		query: "datasets.digest ILIKE '%s'",
+		expectedSQL: `
+SELECT run_uuid FROM runs
+JOIN (SELECT experiment_id,digest FROM datasets WHERE LOWER(digest) LIKE ?)
+AS filter_0 ON runs.experiment_id = filter_0.experiment_id
+`,
+		expectedVars: []any{"%s"},
+	},
+	{
+		name:  "param query",
+		query: "metrics.accuracy > 0.72 AND params.batch_size ILIKE '%A'",
+		expectedSQL: `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid, value FROM latest_metrics WHERE key = ? AND value > ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid
+JOIN (SELECT run_uuid,value FROM params WHERE key = ? AND LOWER(value) LIKE ?)
+AS filter_1 ON runs.run_uuid = filter_1.run_uuid
+`,
+		expectedVars: []any{"accuracy", 0.72, "batch_size", "%a"},
+	},
+}
+
+func TestSearchRunsInSqlite(t *testing.T) {
+	t.Parallel()
+
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+
+	database, err := gorm.Open(gormlite.OpenDB(db), &gorm.Config{DryRun: true})
+
+	require.NoError(t, err)
+
+	for _, testData := range sqliteTests {
+		currentTestData := testData
+
+		t.Run(currentTestData.name, func(t *testing.T) {
+			t.Parallel()
+			assertTestData(t, database, currentTestData)
+		})
+	}
+}
+
+func TestInvalidSearchRunsQuery(t *testing.T) {
+	t.Parallel()
+
+	db, _, err := sqlmock.New()
+	require.NoError(t, err)
+
+	database, err := gorm.Open(gormlite.OpenDB(db), &gorm.Config{DryRun: true})
+	require.NoError(t, err)
+
+	transaction := database.Model(&models.Run{})
+
+	contractErr := sql.ApplyFilter(database, transaction, "⚡✱*@❖$#&")
+	if contractErr == nil {
+		t.Fatal("expected contract error")
 	}
 }
