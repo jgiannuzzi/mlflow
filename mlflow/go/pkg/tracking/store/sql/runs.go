@@ -139,7 +139,7 @@ func ApplyFilter(database, transaction *gorm.DB, filter string) *contract.Error 
 
 		switch clause.Identifier {
 		case parser.Metric:
-			kind = &models.LatestMetric{} // should this be latest_metrics?
+			kind = &models.LatestMetric{}
 		case parser.Parameter:
 			kind = &models.Param{}
 		case parser.Tag:
