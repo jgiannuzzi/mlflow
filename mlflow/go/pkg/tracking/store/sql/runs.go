@@ -118,7 +118,7 @@ func getOffset(pageToken string) (int, *contract.Error) {
 }
 
 //nolint:funlen,cyclop,gocognit
-func ApplyFilter(database, transaction *gorm.DB, filter string) *contract.Error {
+func applyFilter(database, transaction *gorm.DB, filter string) *contract.Error {
 	filterConditions, err := query.ParseFilter(filter)
 	if err != nil {
 		return contract.NewErrorWith(
@@ -361,7 +361,7 @@ func (s TrackingSQLStore) SearchRuns(
 	transaction.Offset(offset)
 
 	// Filter
-	contractError = ApplyFilter(s.db, transaction, filter)
+	contractError = applyFilter(s.db, transaction, filter)
 	if contractError != nil {
 		return nil, contractError
 	}

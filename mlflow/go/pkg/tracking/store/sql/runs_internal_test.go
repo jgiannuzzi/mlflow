@@ -1,4 +1,4 @@
-package sql_test
+package sql
 
 import (
 	"regexp"
@@ -11,7 +11,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/mlflow/mlflow/mlflow/go/pkg/tracking/store/sql"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/tracking/store/sql/models"
 )
 
@@ -113,7 +112,7 @@ func assertTestData(t *testing.T, database *gorm.DB, testData testData) {
 
 	transaction := database.Model(&models.Run{})
 
-	contractErr := sql.ApplyFilter(database, transaction, testData.query)
+	contractErr := applyFilter(database, transaction, testData.query)
 	if contractErr != nil {
 		t.Fatal("contractErr: ", contractErr)
 	}
@@ -232,7 +231,7 @@ func TestInvalidSearchRunsQuery(t *testing.T) {
 
 	transaction := database.Model(&models.Run{})
 
-	contractErr := sql.ApplyFilter(database, transaction, "⚡✱*@❖$#&")
+	contractErr := applyFilter(database, transaction, "⚡✱*@❖$#&")
 	if contractErr == nil {
 		t.Fatal("expected contract error")
 	}
