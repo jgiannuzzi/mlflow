@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
@@ -109,9 +110,14 @@ JOIN (
 func TestSearchRuns(t *testing.T) {
 	t.Parallel()
 
-	dsn := "postgresql://postgres:postgres@localhost:5432/postgres"
-	dialector := postgres.Open(dsn)
-	database, err := gorm.Open(dialector, &gorm.Config{DryRun: true})
+	mockedDB, _, err := sqlmock.New()
+	require.NoError(t, err)
+
+	database, err := gorm.Open(postgres.New(postgres.Config{
+		Conn:       mockedDB,
+		DriverName: "postgres",
+	}), &gorm.Config{DryRun: true})
+
 	require.NoError(t, err)
 
 	for _, testData := range tests {
