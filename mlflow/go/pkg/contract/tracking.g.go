@@ -8,6 +8,7 @@ import (
 )
 
 type TrackingService interface {
+	GetExperimentByName(input *protos.GetExperimentByName) (*protos.GetExperimentByName_Response, *Error)
 	CreateExperiment(input *protos.CreateExperiment) (*protos.CreateExperiment_Response, *Error)
 	GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *Error)
 	DeleteExperiment(input *protos.DeleteExperiment) (*protos.DeleteExperiment_Response, *Error)
@@ -17,6 +18,17 @@ type TrackingService interface {
 }
 
 func RegisterTrackingServiceRoutes(service TrackingService, parser HTTPRequestParser, app *fiber.App) {
+	app.Get("/mlflow/experiments/get-by-name", func(ctx *fiber.Ctx) error {
+		input := &protos.GetExperimentByName{}
+		if err := parser.ParseQuery(ctx, input); err != nil {
+			return err
+		}
+		output, err := service.GetExperimentByName(input)
+		if err != nil {
+			return err
+		}
+		return ctx.JSON(output)
+	})
 	app.Post("/mlflow/experiments/create", func(ctx *fiber.Ctx) error {
 		input := &protos.CreateExperiment{}
 		if err := parser.ParseBody(ctx, input); err != nil {

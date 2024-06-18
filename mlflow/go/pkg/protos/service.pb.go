@@ -2982,7 +2982,7 @@ type GetExperimentByName struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Name of the associated experiment.
-	ExperimentName *string `protobuf:"bytes,1,opt,name=experiment_name,json=experimentName" json:"experiment_name,omitempty" query:"experiment_name"`
+	ExperimentName *string `protobuf:"bytes,1,opt,name=experiment_name,json=experimentName" json:"experiment_name,omitempty" query:"experiment_name" validate:"required"`
 }
 
 func (x *GetExperimentByName) Reset() {

@@ -248,6 +248,66 @@ func (_c *MockTrackingStore_GetExperiment_Call) RunAndReturn(run func(string) (*
 	return _c
 }
 
+// GetExperimentByName provides a mock function with given fields: name
+func (_m *MockTrackingStore) GetExperimentByName(name string) (*protos.Experiment, *contract.Error) {
+	ret := _m.Called(name)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExperimentByName")
+	}
+
+	var r0 *protos.Experiment
+	var r1 *contract.Error
+	if rf, ok := ret.Get(0).(func(string) (*protos.Experiment, *contract.Error)); ok {
+		return rf(name)
+	}
+	if rf, ok := ret.Get(0).(func(string) *protos.Experiment); ok {
+		r0 = rf(name)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*protos.Experiment)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(string) *contract.Error); ok {
+		r1 = rf(name)
+	} else {
+		if ret.Get(1) != nil {
+			r1 = ret.Get(1).(*contract.Error)
+		}
+	}
+
+	return r0, r1
+}
+
+// MockTrackingStore_GetExperimentByName_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExperimentByName'
+type MockTrackingStore_GetExperimentByName_Call struct {
+	*mock.Call
+}
+
+// GetExperimentByName is a helper method to define mock.On call
+//   - name string
+func (_e *MockTrackingStore_Expecter) GetExperimentByName(name interface{}) *MockTrackingStore_GetExperimentByName_Call {
+	return &MockTrackingStore_GetExperimentByName_Call{Call: _e.mock.On("GetExperimentByName", name)}
+}
+
+func (_c *MockTrackingStore_GetExperimentByName_Call) Run(run func(name string)) *MockTrackingStore_GetExperimentByName_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string))
+	})
+	return _c
+}
+
+func (_c *MockTrackingStore_GetExperimentByName_Call) Return(_a0 *protos.Experiment, _a1 *contract.Error) *MockTrackingStore_GetExperimentByName_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockTrackingStore_GetExperimentByName_Call) RunAndReturn(run func(string) (*protos.Experiment, *contract.Error)) *MockTrackingStore_GetExperimentByName_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // LogBatch provides a mock function with given fields: runID, metrics, params, tags
 func (_m *MockTrackingStore) LogBatch(runID string, metrics []*protos.Metric, params []*protos.Param, tags []*protos.RunTag) *contract.Error {
 	ret := _m.Called(runID, metrics, params, tags)
