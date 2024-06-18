@@ -4,31 +4,40 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/config"
 )
 
+type validSample struct {
+	input    string
+	duration config.Duration
+}
+
 func TestValidDuration(t *testing.T) {
 	t.Parallel()
 
-	samples := []string{
-		"1000",
-		`"1s"`,
-		`"2h45m"`,
+	samples := []validSample{
+		{input: "1000", duration: config.Duration{Duration: 1000 * time.Nanosecond}},
+		{input: `"1s"`, duration: config.Duration{Duration: 1 * time.Second}},
+		{input: `"2h45m"`, duration: config.Duration{Duration: 2*time.Hour + 45*time.Minute}},
 	}
 
 	for _, sample := range samples {
 		currentSample := sample
-		t.Run(currentSample, func(t *testing.T) {
+		t.Run(currentSample.input, func(t *testing.T) {
 			t.Parallel()
 
-			jsonConfig := fmt.Sprintf(`{ "shutdownTimeout": %s }`, currentSample)
+			jsonConfig := fmt.Sprintf(`{ "shutdownTimeout": %s }`, currentSample.input)
 
 			var cfg config.Config
 
-			if err := json.Unmarshal([]byte(jsonConfig), &cfg); err != nil {
-				t.Fatal(err)
-			}
+			err := json.Unmarshal([]byte(jsonConfig), &cfg)
+			require.NoError(t, err)
+
+			require.Equal(t, currentSample.duration, cfg.ShutdownTimeout)
 		})
 	}
 }
