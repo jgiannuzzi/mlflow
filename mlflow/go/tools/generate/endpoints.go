@@ -21,7 +21,7 @@ var ServiceInfoMap = map[string]ServiceGenerationInfo{
 }
 
 var ImplementedEndpoints = []string{
-	// "MlflowService_getExperimentByName",
+	"MlflowService_getExperimentByName",
 	"MlflowService_createExperiment",
 	// "MlflowService_searchExperiments",
 	"MlflowService_getExperiment",

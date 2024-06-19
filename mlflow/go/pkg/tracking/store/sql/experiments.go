@@ -133,3 +133,25 @@ func (s TrackingSQLStore) DeleteExperiment(id string) *contract.Error {
 
 	return nil
 }
+
+func (s TrackingSQLStore) GetExperimentByName(name string) (*protos.Experiment, *contract.Error) {
+	var experiment models.Experiment
+
+	err := s.db.Preload("Tags").Where("name = ?", name).First(&experiment).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, contract.NewError(
+				protos.ErrorCode_RESOURCE_DOES_NOT_EXIST,
+				fmt.Sprintf("Could not find experiment with name %q", name),
+			)
+		}
+
+		return nil, contract.NewErrorWith(
+			protos.ErrorCode_INTERNAL_ERROR,
+			fmt.Sprintf("failed to get experiment by name %q", name),
+			err,
+		)
+	}
+
+	return experiment.ToProto(), nil
+}

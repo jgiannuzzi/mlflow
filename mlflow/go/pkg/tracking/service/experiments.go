@@ -12,7 +12,7 @@ import (
 )
 
 // CreateExperiment implements MlflowService.
-func (m TrackingService) CreateExperiment(input *protos.CreateExperiment) (
+func (ts TrackingService) CreateExperiment(input *protos.CreateExperiment) (
 	*protos.CreateExperiment_Response, *contract.Error,
 ) {
 	if input.GetArtifactLocation() != "" {
@@ -42,7 +42,7 @@ func (m TrackingService) CreateExperiment(input *protos.CreateExperiment) (
 		input.ArtifactLocation = &artifactLocation
 	}
 
-	experimentID, err := m.Store.CreateExperiment(input)
+	experimentID, err := ts.Store.CreateExperiment(input)
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +55,10 @@ func (m TrackingService) CreateExperiment(input *protos.CreateExperiment) (
 }
 
 // GetExperiment implements MlflowService.
-func (m TrackingService) GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *contract.Error) {
-	experiment, cErr := m.Store.GetExperiment(input.GetExperimentId())
-	if cErr != nil {
-		return nil, cErr
+func (ts TrackingService) GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *contract.Error) {
+	experiment, err := ts.Store.GetExperiment(input.GetExperimentId())
+	if err != nil {
+		return nil, err
 	}
 
 	response := protos.GetExperiment_Response{
@@ -68,13 +68,28 @@ func (m TrackingService) GetExperiment(input *protos.GetExperiment) (*protos.Get
 	return &response, nil
 }
 
-func (m TrackingService) DeleteExperiment(
+func (ts TrackingService) DeleteExperiment(
 	input *protos.DeleteExperiment,
 ) (*protos.DeleteExperiment_Response, *contract.Error) {
-	err := m.Store.DeleteExperiment(input.GetExperimentId())
+	err := ts.Store.DeleteExperiment(input.GetExperimentId())
 	if err != nil {
 		return nil, err
 	}
 
 	return &protos.DeleteExperiment_Response{}, nil
+}
+
+func (ts TrackingService) GetExperimentByName(
+	input *protos.GetExperimentByName,
+) (*protos.GetExperimentByName_Response, *contract.Error) {
+	experiment, err := ts.Store.GetExperimentByName(input.GetExperimentName())
+	if err != nil {
+		return nil, err
+	}
+
+	response := protos.GetExperimentByName_Response{
+		Experiment: experiment,
+	}
+
+	return &response, nil
 }

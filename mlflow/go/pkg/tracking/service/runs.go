@@ -7,7 +7,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 )
 
-func (m TrackingService) SearchRuns(input *protos.SearchRuns) (*protos.SearchRuns_Response, *contract.Error) {
+func (ts TrackingService) SearchRuns(input *protos.SearchRuns) (*protos.SearchRuns_Response, *contract.Error) {
 	var runViewType protos.ViewType
 	if input.RunViewType == nil {
 		runViewType = protos.ViewType_ALL
@@ -17,7 +17,7 @@ func (m TrackingService) SearchRuns(input *protos.SearchRuns) (*protos.SearchRun
 
 	maxResults := int(input.GetMaxResults())
 
-	page, err := m.Store.SearchRuns(
+	page, err := ts.Store.SearchRuns(
 		input.GetExperimentIds(),
 		input.GetFilter(),
 		runViewType,
@@ -37,8 +37,8 @@ func (m TrackingService) SearchRuns(input *protos.SearchRuns) (*protos.SearchRun
 	return &response, nil
 }
 
-func (m TrackingService) LogBatch(input *protos.LogBatch) (*protos.LogBatch_Response, *contract.Error) {
-	err := m.Store.LogBatch(input.GetRunId(), input.GetMetrics(), input.GetParams(), input.GetTags())
+func (ts TrackingService) LogBatch(input *protos.LogBatch) (*protos.LogBatch_Response, *contract.Error) {
+	err := ts.Store.LogBatch(input.GetRunId(), input.GetMetrics(), input.GetParams(), input.GetTags())
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +46,8 @@ func (m TrackingService) LogBatch(input *protos.LogBatch) (*protos.LogBatch_Resp
 	return &protos.LogBatch_Response{}, nil
 }
 
-func (m TrackingService) CreateRun(input *protos.CreateRun) (*protos.CreateRun_Response, *contract.Error) {
-	run, err := m.Store.CreateRun(input)
+func (ts TrackingService) CreateRun(input *protos.CreateRun) (*protos.CreateRun_Response, *contract.Error) {
+	run, err := ts.Store.CreateRun(input)
 	if err != nil {
 		return nil, err
 	}
