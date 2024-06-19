@@ -1,3 +1,4 @@
+//nolint:ireturn
 package sql
 
 import (
@@ -17,7 +18,7 @@ import (
 type testData struct {
 	name         string
 	query        string
-	expectedSQL  string
+	expectedSQL  map[string]string
 	expectedVars []any
 }
 
@@ -27,72 +28,108 @@ func removeWhitespace(s string) string {
 	return whitespaceRegex.ReplaceAllString(s, "")
 }
 
-var postgresTests = []testData{
+var tests = []testData{
 	{
 		name:  "simple metric query",
 		query: "metrics.accuracy > 0.72",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 JOIN (SELECT "run_uuid","value" FROM "latest_metrics" WHERE key = $1 AND value > $2)
 AS filter_0
 ON runs.run_uuid = filter_0.run_uuid`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid,value FROM latest_metrics WHERE key = ? AND value > ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+		},
 		expectedVars: []any{"accuracy", 0.72},
 	},
 	{
 		name:  "simple metric and param query",
 		query: "metrics.accuracy > 0.72 AND params.batch_size = '2'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 JOIN (SELECT "run_uuid","value" FROM "latest_metrics" WHERE key = $1 AND value > $2)
 AS filter_0 ON runs.run_uuid = filter_0.run_uuid
 JOIN (SELECT "run_uuid","value" FROM "params" WHERE key = $3 AND value = $4)
-AS filter_1 ON runs.run_uuid = filter_1.run_uuid
-`,
+AS filter_1 ON runs.run_uuid = filter_1.run_uuid`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid,value FROM latest_metrics WHERE key = ? AND value > ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid
+JOIN (SELECT run_uuid,value FROM params WHERE key = ? AND value = ?)
+AS filter_1 ON runs.run_uuid = filter_1.run_uuid`,
+		},
 		expectedVars: []any{"accuracy", 0.72, "batch_size", "2"},
 	},
 	{
 		name:  "tag query",
 		query: "tags.environment = 'notebook' AND tags.task ILIKE 'classif%'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 JOIN (SELECT "run_uuid","value" FROM "tags" WHERE key = $1 AND value = $2)
 AS filter_0 ON runs.run_uuid = filter_0.run_uuid
 JOIN (SELECT "run_uuid","value" FROM "tags" WHERE key = $3 AND value ILIKE $4)
 AS filter_1 ON runs.run_uuid = filter_1.run_uuid`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid,value FROM tags WHERE key = ? AND value = ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid
+JOIN (SELECT run_uuid,value FROM tags WHERE key = ? AND LOWER(value) LIKE ?)
+AS filter_1 ON runs.run_uuid = filter_1.run_uuid`,
+		},
 		expectedVars: []any{"environment", "notebook", "task", "classif%"},
 	},
 	{
 		name:  "datasests IN query",
 		query: "datasets.digest IN ('s8ds293b', 'jks834s2')",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 JOIN (SELECT "experiment_id","digest" FROM "datasets" WHERE digest IN ($1,$2))
-AS filter_0 ON runs.experiment_id = filter_0.experiment_id
-`,
+AS filter_0 ON runs.experiment_id = filter_0.experiment_id`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT experiment_id,digest FROM datasets WHERE digest IN (?,?))
+AS filter_0 ON runs.experiment_id = filter_0.experiment_id`,
+		},
 		expectedVars: []any{"s8ds293b", "jks834s2"},
 	},
 	{
 		name:  "attributes query",
 		query: "attributes.run_id = 'a1b2c3d4'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 WHERE runs.run_uuid = $1
-`,
+	`,
+			"sqlite": `SELECT run_uuid FROM runs WHERE runs.run_uuid = ?`,
+		},
 		expectedVars: []any{"a1b2c3d4"},
 	},
 	{
 		name:  "run_name query",
 		query: "attributes.run_name = 'my-run'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 JOIN (SELECT "run_uuid","value" FROM "tags" WHERE key = $1 AND value = $2)
 AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid,value FROM tags WHERE key = ? AND value = ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+		},
 		expectedVars: []any{"mlflow.runName", "my-run"},
 	},
 	{
 		name:  "datasets.context query",
 		query: "datasets.context = 'train'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
 SELECT "run_uuid" FROM "runs"
 JOIN (
 	SELECT inputs.destination_id AS run_uuid
@@ -103,69 +140,46 @@ JOIN (
 	AND input_tags.value = $1
 	WHERE inputs.destination_type = 'RUN'
 ) AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (
+	SELECT inputs.destination_id AS run_uuid
+	FROM inputs
+	JOIN input_tags ON inputs.input_uuid = input_tags.input_uuid
+	AND input_tags.name = 'mlflow.data.context'
+	AND input_tags.value = ? WHERE inputs.destination_type = 'RUN'
+) AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+		},
 		expectedVars: []any{"train"},
 	},
-}
-
-func assertTestData(t *testing.T, database *gorm.DB, testData testData) {
-	t.Helper()
-
-	transaction := database.Model(&models.Run{})
-
-	contractErr := applyFilter(database, transaction, testData.query)
-	if contractErr != nil {
-		t.Fatal("contractErr: ", contractErr)
-	}
-
-	actualSQL := transaction.Select("ID").Find(&models.Run{}).Statement.SQL.String()
-
-	// if removeWhitespace(testData.expectedSQL) != removeWhitespace(actualSQL) {
-	// 	fmt.Println(actualSQL)
-	// }
-
-	assert.Equal(t, removeWhitespace(testData.expectedSQL), removeWhitespace(actualSQL))
-	assert.Equal(t, testData.expectedVars, transaction.Statement.Vars)
-}
-
-func TestSearchRunsInPostgres(t *testing.T) {
-	t.Parallel()
-
-	mockedDB, _, err := sqlmock.New()
-	require.NoError(t, err)
-
-	database, err := gorm.Open(postgres.New(postgres.Config{
-		Conn:       mockedDB,
-		DriverName: "postgres",
-	}), &gorm.Config{DryRun: true})
-
-	require.NoError(t, err)
-
-	for _, testData := range postgresTests {
-		currentTestData := testData
-
-		t.Run(currentTestData.name, func(t *testing.T) {
-			t.Parallel()
-			assertTestData(t, database, currentTestData)
-		})
-	}
-}
-
-var sqliteTests = []testData{
 	{
 		name:  "run_name query",
 		query: "attributes.run_name ILIKE 'my-run%'",
-		expectedSQL: `
-	SELECT run_uuid FROM runs
-	JOIN (SELECT run_uuid, value FROM tags
-	WHERE key = ? AND LOWER(value) LIKE ?)
-	AS filter_0 ON runs.run_uuid = filter_0.run_uuid
-	`,
+		expectedSQL: map[string]string{
+			"postgres": `
+SELECT "run_uuid" FROM "runs"
+JOIN (SELECT "run_uuid","value" FROM "tags" WHERE key = $1 AND value ILIKE $2)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid, value FROM tags WHERE key = ? AND LOWER(value) LIKE ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+		},
 		expectedVars: []any{"mlflow.runName", "my-run%"},
 	},
 	{
 		name:  "datasets.context query",
 		query: "datasets.context ILIKE '%train'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
+SELECT "run_uuid" FROM "runs"
+JOIN (
+	SELECT inputs.destination_id AS run_uuid FROM "inputs"
+	JOIN input_tags ON inputs.input_uuid = input_tags.input_uuid
+	AND input_tags.name = 'mlflow.data.context'
+	AND input_tags.value ILIKE $1 WHERE inputs.destination_type = 'RUN'
+) AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+			"sqlite": `
 SELECT run_uuid FROM runs
 JOIN (
 	SELECT inputs.destination_id AS run_uuid FROM inputs
@@ -173,52 +187,136 @@ JOIN (
 	AND input_tags.name = 'mlflow.data.context'
 	AND LOWER(input_tags.value) LIKE ? WHERE inputs.destination_type = 'RUN')
 AS filter_0 ON runs.run_uuid = filter_0.run_uuid
-`,
+	`,
+		},
 		expectedVars: []any{"%train"},
 	},
 	{
 		name:  "datasests.digest",
 		query: "datasets.digest ILIKE '%s'",
-		expectedSQL: `
+		expectedSQL: map[string]string{
+			"postgres": `
+SELECT "run_uuid" FROM "runs"
+JOIN (SELECT "experiment_id","digest" FROM "datasets" WHERE digest ILIKE $1)
+AS filter_0 ON runs.experiment_id = filter_0.experiment_id`,
+			"sqlite": `
 SELECT run_uuid FROM runs
 JOIN (SELECT experiment_id,digest FROM datasets WHERE LOWER(digest) LIKE ?)
-AS filter_0 ON runs.experiment_id = filter_0.experiment_id
-`,
+AS filter_0 ON runs.experiment_id = filter_0.experiment_id`,
+		},
 		expectedVars: []any{"%s"},
 	},
 	{
 		name:  "param query",
-		query: "metrics.accuracy > 0.72 AND params.batch_size ILIKE '%A'",
-		expectedSQL: `
+		query: "metrics.accuracy > 0.72 AND params.batch_size ILIKE '%a'",
+		expectedSQL: map[string]string{
+			"postgres": `
+SELECT "run_uuid" FROM "runs"
+JOIN (SELECT "run_uuid","value" FROM "latest_metrics" WHERE key = $1 AND value > $2)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid
+JOIN (SELECT "run_uuid","value" FROM "params" WHERE key = $3 AND value ILIKE $4)
+AS filter_1 ON runs.run_uuid = filter_1.run_uuid`,
+			"sqlite": `
 SELECT run_uuid FROM runs
 JOIN (SELECT run_uuid, value FROM latest_metrics WHERE key = ? AND value > ?)
 AS filter_0 ON runs.run_uuid = filter_0.run_uuid
 JOIN (SELECT run_uuid,value FROM params WHERE key = ? AND LOWER(value) LIKE ?)
 AS filter_1 ON runs.run_uuid = filter_1.run_uuid
-`,
+	`,
+		},
 		expectedVars: []any{"accuracy", 0.72, "batch_size", "%a"},
 	},
 }
 
-func TestSearchRunsInSqlite(t *testing.T) {
+func newPostgresDialector() gorm.Dialector {
+	mockedDB, _, _ := sqlmock.New()
+
+	return postgres.New(postgres.Config{
+		Conn:       mockedDB,
+		DriverName: "postgres",
+	})
+}
+
+func newSqliteDialector() gorm.Dialector {
+	mockedDB, _, _ := sqlmock.New()
+
+	return gormlite.OpenDB(mockedDB)
+}
+
+var dialectors = []gorm.Dialector{
+	newPostgresDialector(),
+	newSqliteDialector(),
+}
+
+func assertTestData(
+	t *testing.T, database *gorm.DB, query, expectedSQL string, expectedVars []any,
+) {
+	t.Helper()
+
+	transaction := database.Model(&models.Run{})
+
+	contractErr := applyFilter(database, transaction, query)
+	if contractErr != nil {
+		t.Fatal("contractErr: ", contractErr)
+	}
+
+	sqlErr := transaction.Select("ID").Find(&models.Run{}).Error
+	require.NoError(t, sqlErr)
+
+	actualSQL := transaction.Statement.SQL.String()
+
+	// if removeWhitespace(expectedSQL) != removeWhitespace(actualSQL) {
+	// 	fmt.Println(strings.ReplaceAll(actualSQL, "`", ""))
+	// }
+
+	assert.Equal(t, removeWhitespace(expectedSQL), removeWhitespace(actualSQL))
+	assert.Equal(t, expectedVars, transaction.Statement.Vars)
+}
+
+func TestSearchRuns(t *testing.T) {
 	t.Parallel()
 
-	db, _, err := sqlmock.New()
-	require.NoError(t, err)
+	for _, dialector := range dialectors {
+		database, err := gorm.Open(dialector, &gorm.Config{DryRun: true})
+		require.NoError(t, err)
 
-	database, err := gorm.Open(gormlite.OpenDB(db), &gorm.Config{DryRun: true})
+		dialectorName := database.Dialector.Name()
 
-	require.NoError(t, err)
-
-	for _, testData := range sqliteTests {
-		currentTestData := testData
-
-		t.Run(currentTestData.name, func(t *testing.T) {
-			t.Parallel()
-			assertTestData(t, database, currentTestData)
-		})
+		for _, testData := range tests {
+			currentTestData := testData
+			if expectedSQL, ok := currentTestData.expectedSQL[dialectorName]; ok {
+				t.Run(currentTestData.name+"_"+dialectorName, func(t *testing.T) {
+					t.Parallel()
+					assertTestData(t, database, currentTestData.query, expectedSQL, currentTestData.expectedVars)
+				})
+			}
+		}
 	}
 }
+
+// var sqliteTests = []testData{
+
+// }
+
+// func TestSearchRunsInSqlite(t *testing.T) {
+// 	t.Parallel()
+
+// 	db, _, err := sqlmock.New()
+// 	require.NoError(t, err)
+
+// 	database, err := gorm.Open(gormlite.OpenDB(db), &gorm.Config{DryRun: true})
+
+// 	require.NoError(t, err)
+
+// 	for _, testData := range sqliteTests {
+// 		currentTestData := testData
+
+// 		t.Run(currentTestData.name, func(t *testing.T) {
+// 			t.Parallel()
+// 			assertTestData(t, database, currentTestData)
+// 		})
+// 	}
+// }
 
 func TestInvalidSearchRunsQuery(t *testing.T) {
 	t.Parallel()
