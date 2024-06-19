@@ -56,9 +56,9 @@ func (ts TrackingService) CreateExperiment(input *protos.CreateExperiment) (
 
 // GetExperiment implements MlflowService.
 func (ts TrackingService) GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *contract.Error) {
-	experiment, cErr := ts.Store.GetExperiment(input.GetExperimentId())
-	if cErr != nil {
-		return nil, cErr
+	experiment, err := ts.Store.GetExperiment(input.GetExperimentId())
+	if err != nil {
+		return nil, err
 	}
 
 	response := protos.GetExperiment_Response{
@@ -82,9 +82,9 @@ func (ts TrackingService) DeleteExperiment(
 func (ts TrackingService) GetExperimentByName(
 	input *protos.GetExperimentByName,
 ) (*protos.GetExperimentByName_Response, *contract.Error) {
-	experiment, cErr := ts.Store.GetExperimentByName(input.GetExperimentName())
-	if cErr != nil {
-		return nil, cErr
+	experiment, err := ts.Store.GetExperimentByName(input.GetExperimentName())
+	if err != nil {
+		return nil, err
 	}
 
 	response := protos.GetExperimentByName_Response{
