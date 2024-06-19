@@ -190,6 +190,7 @@ func applyFilter(database, transaction *gorm.DB, filter string) *contract.Error 
 			valueColumn := "input_tags.value "
 			if isSqliteAndILike {
 				valueColumn = "LOWER(input_tags.value) "
+				comparison = "LIKE"
 
 				if str, ok := value.(string); ok {
 					value = strings.ToLower(str)
