@@ -9,7 +9,9 @@ import (
 	"github.com/ncruces/go-sqlite3/gormlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
+	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/tracking/store/sql/models"
@@ -39,6 +41,14 @@ JOIN (SELECT "run_uuid","value" FROM "latest_metrics" WHERE key = $1 AND value >
 AS filter_0
 ON runs.run_uuid = filter_0.run_uuid`,
 			"sqlite": `
+SELECT run_uuid FROM runs
+JOIN (SELECT run_uuid,value FROM latest_metrics WHERE key = ? AND value > ?)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+			"sqlserver": `
+SELECT "run_uuid" FROM "runs"
+JOIN (SELECT "run_uuid","value" FROM "latest_metrics" WHERE key = @p1 AND value > @p2)
+AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
+			"mysql": `
 SELECT run_uuid FROM runs
 JOIN (SELECT run_uuid,value FROM latest_metrics WHERE key = ? AND value > ?)
 AS filter_0 ON runs.run_uuid = filter_0.run_uuid`,
@@ -243,9 +253,30 @@ func newSqliteDialector() gorm.Dialector {
 	return gormlite.OpenDB(mockedDB)
 }
 
+func newSQLServerDialector() gorm.Dialector {
+	mockedDB, _, _ := sqlmock.New()
+
+	return sqlserver.New(sqlserver.Config{
+		DriverName: "sqlserver",
+		Conn:       mockedDB,
+	})
+}
+
+func newMySQLDialector() gorm.Dialector {
+	mockedDB, _, _ := sqlmock.New()
+
+	return mysql.New(mysql.Config{
+		DriverName:                "mysql",
+		Conn:                      mockedDB,
+		SkipInitializeWithVersion: true,
+	})
+}
+
 var dialectors = []gorm.Dialector{
 	newPostgresDialector(),
 	newSqliteDialector(),
+	newSQLServerDialector(),
+	newMySQLDialector(),
 }
 
 func assertTestData(
@@ -293,30 +324,6 @@ func TestSearchRuns(t *testing.T) {
 		}
 	}
 }
-
-// var sqliteTests = []testData{
-
-// }
-
-// func TestSearchRunsInSqlite(t *testing.T) {
-// 	t.Parallel()
-
-// 	db, _, err := sqlmock.New()
-// 	require.NoError(t, err)
-
-// 	database, err := gorm.Open(gormlite.OpenDB(db), &gorm.Config{DryRun: true})
-
-// 	require.NoError(t, err)
-
-// 	for _, testData := range sqliteTests {
-// 		currentTestData := testData
-
-// 		t.Run(currentTestData.name, func(t *testing.T) {
-// 			t.Parallel()
-// 			assertTestData(t, database, currentTestData)
-// 		})
-// 	}
-// }
 
 func TestInvalidSearchRunsQuery(t *testing.T) {
 	t.Parallel()
