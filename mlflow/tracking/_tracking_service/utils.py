@@ -126,8 +126,17 @@ def get_tracking_uri() -> str:
         return path_to_local_file_uri(os.path.abspath(DEFAULT_LOCAL_FILE_AND_ARTIFACT_PATH))
 
 
+def _use_go_store_if_enabled(store_cls):
+    if os.environ.get("MLFLOW_EXPERIMENTAL_GO_STORE_ENABLED", "false").lower() != "true":
+        return store_cls
+
+    from mlflow.store.tracking.go_store import GoStore
+
+    return GoStore(store_cls)
+
+
 def _get_file_store(store_uri, **_):
-    return FileStore(store_uri, store_uri)
+    return _use_go_store_if_enabled(FileStore)(store_uri, store_uri)
 
 
 def _get_sqlalchemy_store(store_uri, artifact_uri):
@@ -135,7 +144,7 @@ def _get_sqlalchemy_store(store_uri, artifact_uri):
 
     if artifact_uri is None:
         artifact_uri = DEFAULT_LOCAL_FILE_AND_ARTIFACT_PATH
-    return SqlAlchemyStore(store_uri, artifact_uri)
+    return _use_go_store_if_enabled(SqlAlchemyStore)(store_uri, artifact_uri)
 
 
 def _get_rest_store(store_uri, **_):

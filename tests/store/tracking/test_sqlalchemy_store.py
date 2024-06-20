@@ -65,6 +65,7 @@ from mlflow.store.tracking.dbmodels.models import (
     SqlTraceRequestMetadata,
     SqlTraceTag,
 )
+from mlflow.store.tracking.go_store import GoStore
 from mlflow.store.tracking.sqlalchemy_store import SqlAlchemyStore, _get_orderby_clauses
 from mlflow.tracing.constant import TraceMetadataKey
 from mlflow.utils import mlflow_tags
@@ -152,12 +153,12 @@ def test_fail_on_multiple_drivers():
         extract_db_type_from_uri("mysql+pymsql+pyodbc://...")
 
 
-@pytest.fixture
-def store(tmp_path: Path):
+@pytest.fixture(params=[SqlAlchemyStore, GoStore(SqlAlchemyStore)])
+def store(request, tmp_path: Path):
     db_uri = MLFLOW_TRACKING_URI.get() or f"{DB_URI}{tmp_path / 'temp.db'}"
     artifact_uri = tmp_path / "artifacts"
     artifact_uri.mkdir(exist_ok=True)
-    store = SqlAlchemyStore(db_uri, artifact_uri.as_uri())
+    store = request.param(db_uri, artifact_uri.as_uri())
     yield store
     _cleanup_database(store)
 

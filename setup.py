@@ -17,26 +17,6 @@ def _is_go_installed() -> bool:
         return False
 
 
-def _get_platform() -> str:
-    os = subprocess.check_output(["go", "env", "GOOS"]).strip().decode("utf-8")
-    arch = subprocess.check_output(["go", "env", "GOARCH"]).strip().decode("utf-8")
-    plat = f"{os}_{arch}"
-    if plat == "darwin_amd64":
-        return "macosx_10_12_x86_64"
-    elif plat == "darwin_arm64":
-        return "macosx_11_0_arm64"
-    elif plat == "linux_amd64":
-        return "linux_x86_64"
-    elif plat == "linux_arm64":
-        return "linux_aarch64"
-    elif plat == "windows_amd64":
-        return "win_amd64"
-    elif plat == "windows_arm64":
-        return "win_arm64"
-    else:
-        raise ValueError("not supported platform.")
-
-
 def finalize_distribution_options(dist: Distribution) -> None:
     go_installed = _is_go_installed()
 
@@ -48,7 +28,8 @@ def finalize_distribution_options(dist: Distribution) -> None:
 
         class bdist_wheel_go(bdist_wheel_base_class):
             def get_tag(self) -> Tuple[str, str, str]:
-                return "py3", "none", _get_platform()
+                _, _, plat = super().get_tag()
+                return "py3", "none", plat
 
         dist.cmdclass["bdist_wheel"] = bdist_wheel_go
 
@@ -67,16 +48,26 @@ def finalize_distribution_options(dist: Distribution) -> None:
             if not self.editable_mode:
                 shutil.rmtree(os.path.join(self.build_lib, "mlflow", "go"), ignore_errors=True)
                 if go_installed:
+                    env = os.environ.copy()
+                    env.update(
+                        {
+                            "CGO_ENABLED": "1",
+                        }
+                    )
                     subprocess.check_call(
                         [
                             "go",
                             "build",
+                            "-trimpath",
                             "-ldflags",
                             "-w -s",
                             "-o",
                             os.path.join(self.build_lib, "mlflow", "go", "server"),
-                            "./mlflow/go",
-                        ]
+                            "-buildmode",
+                            "c-shared",
+                            "./mlflow/go/python",
+                        ],
+                        env=env,
                     )
 
         def get_source_files(self) -> List[str]:
