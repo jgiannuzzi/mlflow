@@ -20,6 +20,8 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/config"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/server/parser"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/server/routes"
 )
 
 func configureApp(loggerInstance *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
@@ -152,9 +154,9 @@ func newFiberConfig() fiber.Config {
 func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 	app := fiber.New(newFiberConfig())
 
-	parser, err := NewHTTPRequestParser()
+	parser, err := parser.NewHTTPRequestParser()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create new HTTP request parser: %w", err)
 	}
 
 	mlflowService, err := ts.NewTrackingService(logger, cfg)
@@ -162,7 +164,7 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 		return nil, fmt.Errorf("could not create new tracking service: %w", err)
 	}
 
-	contract.RegisterTrackingServiceRoutes(mlflowService, parser, app)
+	routes.RegisterTrackingServiceRoutes(mlflowService, parser, app)
 
 	return app, nil
 }

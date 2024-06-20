@@ -24,12 +24,17 @@ func mkImportSpec(value string) *ast.ImportSpec {
 	return &ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: value}}
 }
 
-var importStatements = &ast.GenDecl{
-	Tok: token.IMPORT,
-	Specs: []ast.Spec{
-		mkImportSpec(`"github.com/gofiber/fiber/v2"`),
-		mkImportSpec(`"github.com/mlflow/mlflow/mlflow/go/pkg/protos"`),
-	},
+func mkImportStatements(importStatements ...string) *ast.GenDecl {
+	specs := make([]ast.Spec, 0, len(importStatements))
+
+	for _, importStatement := range importStatements {
+		specs = append(specs, mkImportSpec(importStatement))
+	}
+
+	return &ast.GenDecl{
+		Tok:   token.IMPORT,
+		Specs: specs,
+	}
 }
 
 func mkStarExpr(e ast.Expr) *ast.StarExpr {
@@ -72,7 +77,7 @@ func mkServiceInterfaceMethod(methodInfo discovery.MethodInfo) *ast.Field {
 			Results: &ast.FieldList{
 				List: []*ast.Field{
 					mkField(mkStarExpr(mkSelectorExpr(methodInfo.PackageName, methodInfo.Output))),
-					mkField(mkStarExpr(ast.NewIdent("Error"))),
+					mkField(mkStarExpr(mkSelectorExpr("contract", "Error"))),
 				},
 			},
 		},
@@ -295,8 +300,8 @@ func mkRouteRegistrationFunction(
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{
 				List: []*ast.Field{
-					mkNamedField("service", ast.NewIdent(interfaceName)),
-					mkNamedField("parser", ast.NewIdent("HTTPRequestParser")),
+					mkNamedField("service", mkSelectorExpr("service", interfaceName)),
+					mkNamedField("parser", mkStarExpr(mkSelectorExpr("parser", "HTTPRequestParser"))),
 					mkNamedField("app", mkStarExpr(ast.NewIdent("fiber.App"))),
 				},
 			},
@@ -307,8 +312,87 @@ func mkRouteRegistrationFunction(
 	}
 }
 
-// Generate the service interface and route registration functions.
-func generateServices(pkgFolder string) error {
+func mkGeneratedFile(pkg, outputPath string, decls []ast.Decl) error {
+	// Set up the FileSet and the AST File
+	fset := token.NewFileSet()
+
+	file := &ast.File{
+		Name:  ast.NewIdent(pkg),
+		Decls: decls,
+	}
+
+	err := saveASTToFile(fset, file, true, outputPath)
+	if err != nil {
+		return fmt.Errorf("could not save AST to file: %w", err)
+	}
+
+	return nil
+}
+
+const expectedImportStatements = 2
+
+// Generate the service interface.
+func generateServices(
+	pkgFolder string,
+	serviceInfo discovery.ServiceInfo,
+	generationInfo ServiceGenerationInfo,
+	endpoints map[string]any,
+) error {
+	decls := make([]ast.Decl, 0, len(endpoints)+expectedImportStatements)
+
+	if len(endpoints) > 0 {
+		decls = append(decls,
+			mkImportStatements(
+				`"github.com/mlflow/mlflow/mlflow/go/pkg/protos"`,
+				`"github.com/mlflow/mlflow/mlflow/go/pkg/contract"`,
+			))
+	}
+
+	decls = append(decls, mkServiceInterfaceNode(
+		endpoints,
+		generationInfo.ServiceName,
+		serviceInfo,
+	))
+
+	fileName := generationInfo.FileNameWithoutExtension + ".g.go"
+	pkg := "service"
+	outputPath := filepath.Join(pkgFolder, "contract", pkg, fileName)
+
+	return mkGeneratedFile(pkg, outputPath, decls)
+}
+
+func generateRouteRegistrations(
+	pkgFolder string,
+	serviceInfo discovery.ServiceInfo,
+	generationInfo ServiceGenerationInfo,
+	endpoints map[string]any,
+) error {
+	importStatements := []string{
+		`"github.com/gofiber/fiber/v2"`,
+		`"github.com/mlflow/mlflow/mlflow/go/pkg/server/parser"`,
+		`"github.com/mlflow/mlflow/mlflow/go/pkg/contract/service"`,
+	}
+
+	if len(endpoints) > 0 {
+		importStatements = append(
+			importStatements,
+			`"github.com/mlflow/mlflow/mlflow/go/pkg/protos"`,
+		)
+	}
+
+	decls := []ast.Decl{
+		mkImportStatements(importStatements...),
+		mkRouteRegistrationFunction(endpoints, generationInfo.ServiceName, serviceInfo),
+	}
+
+	fileName := generationInfo.FileNameWithoutExtension + ".g.go"
+	pkg := "routes"
+	outputPath := filepath.Join(pkgFolder, "server", pkg, fileName)
+
+	return mkGeneratedFile(pkg, outputPath, decls)
+}
+
+func generateSourceCode(pkgFolder string) error {
 	services, err := discovery.GetServiceInfos()
 	if err != nil {
 		return fmt.Errorf("could not get service info: %w", err)
@@ -321,37 +405,21 @@ func generateServices(pkgFolder string) error {
 		}
 
 		endpoints := make(map[string]any, len(ImplementedEndpoints))
+
 		for _, endpoint := range ImplementedEndpoints {
-			endpoints[endpoint] = nil
+			if strings.HasPrefix(endpoint, serviceInfo.Name) {
+				endpoints[endpoint] = nil
+			}
 		}
 
-		decls := []ast.Decl{importStatements}
-		decls = append(decls, mkServiceInterfaceNode(
-			endpoints,
-			generationInfo.ServiceName,
-			serviceInfo,
-		))
-		decls = append(
-			decls,
-			mkRouteRegistrationFunction(endpoints, generationInfo.ServiceName, serviceInfo),
-		)
-
-		// Set up the FileSet and the AST File
-		fset := token.NewFileSet()
-
-		pkg := "contract"
-
-		file := &ast.File{
-			Name:  ast.NewIdent(pkg),
-			Decls: decls,
-		}
-
-		fileName := generationInfo.FileNameWithoutExtension + ".g.go"
-		outputPath := filepath.Join(pkgFolder, pkg, fileName)
-
-		err := saveASTToFile(fset, file, true, outputPath)
+		err = generateServices(pkgFolder, serviceInfo, generationInfo, endpoints)
 		if err != nil {
-			return fmt.Errorf("could not save AST to file: %w", err)
+			return err
+		}
+
+		err = generateRouteRegistrations(pkgFolder, serviceInfo, generationInfo, endpoints)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -480,8 +548,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := generateServices(pkgFolder); err != nil {
-		fmt.Printf("Error generating services: %s\n", err)
+	if err := generateSourceCode(pkgFolder); err != nil {
+		fmt.Printf("Error generating source code: %s\n", err)
 		os.Exit(1)
 	}
 
