@@ -92,8 +92,7 @@ func mkServiceInterfaceNode(
 	methods := make([]*ast.Field, 0, len(serviceInfo.Methods))
 
 	for _, method := range serviceInfo.Methods {
-		endpointName := fmt.Sprintf("%s_%s", serviceInfo.Name, method.Name)
-		if _, ok := endpoints[endpointName]; ok {
+		if _, ok := endpoints[method.Name]; ok {
 			methods = append(methods, mkServiceInterfaceMethod(method))
 		}
 	}
@@ -288,8 +287,7 @@ func mkRouteRegistrationFunction(
 
 	for _, method := range serviceInfo.Methods {
 		for _, endpoint := range method.Endpoints {
-			endpointName := fmt.Sprintf("%s_%s", serviceInfo.Name, method.Name)
-			if _, ok := endpoints[endpointName]; ok {
+			if _, ok := endpoints[method.Name]; ok {
 				routes = append(routes, mkAppRoute(method, endpoint))
 			}
 		}
@@ -404,12 +402,10 @@ func generateSourceCode(pkgFolder string) error {
 			continue
 		}
 
-		endpoints := make(map[string]any, len(ImplementedEndpoints))
+		endpoints := make(map[string]any, len(generationInfo.ImplementedEndpoints))
 
-		for _, endpoint := range ImplementedEndpoints {
-			if strings.HasPrefix(endpoint, serviceInfo.Name) {
-				endpoints[endpoint] = nil
-			}
+		for _, endpoint := range generationInfo.ImplementedEndpoints {
+			endpoints[endpoint] = nil
 		}
 
 		err = generateServices(pkgFolder, serviceInfo, generationInfo, endpoints)
