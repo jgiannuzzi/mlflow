@@ -14,7 +14,7 @@ lib = ffi.dlopen("libmlflow.so")
 
 ffi.cdef(
     """
-extern int64_t CreateTrackingService(char* configJSON);
+extern int64_t CreateTrackingService(void* configData, int configSize);
 extern void DestroyTrackingService(int64_t id);
 extern void* TrackingServiceCreateExperiment(
     int64_t serviceID, void* requestData, int requestSize, int* responseSize);
@@ -25,22 +25,21 @@ void free(void*);
 )
 
 
-class GoException(RestException):
+class GoStoreException(RestException):
     pass
 
 
 class _GoStore:
     def __init__(self, store_url, default_artifact_root):
         super().__init__(store_url, default_artifact_root)
-        self.service_id = lib.CreateTrackingService(
-            json.dumps(
-                {
-                    "DefaultArtifactRoot": resolve_uri_if_local(default_artifact_root),
-                    "LogLevel": "info",
-                    "StoreUrl": store_url,
-                }
-            ).encode("utf-8")
-        )
+        config = json.dumps(
+            {
+                "DefaultArtifactRoot": resolve_uri_if_local(default_artifact_root),
+                "LogLevel": "info",
+                "StoreUrl": store_url,
+            }
+        ).encode("utf-8")
+        self.service_id = lib.CreateTrackingService(config, len(config))
 
     def __del__(self):
         lib.DestroyTrackingService(self.service_id)
@@ -66,9 +65,9 @@ class _GoStore:
             return Experiment.from_proto(response.experiment)
         except DecodeError:
             try:
-                raise GoException(json.loads(response_bytes)) from None
+                raise GoStoreException(json.loads(response_bytes)) from None
             except json.JSONDecodeError as e:
-                raise GoException(
+                raise GoStoreException(
                     message=f"Failed to parse response: {e}",
                 )
 
@@ -97,9 +96,9 @@ class _GoStore:
             return response.experiment_id
         except DecodeError:
             try:
-                raise GoException(json.loads(response_bytes)) from None
+                raise GoStoreException(json.loads(response_bytes)) from None
             except json.JSONDecodeError as e:
-                raise GoException(
+                raise GoStoreException(
                     message=f"Failed to parse response: {e}",
                 )
 
