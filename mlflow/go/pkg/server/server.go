@@ -15,11 +15,15 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/sirupsen/logrus"
 
+	as "github.com/mlflow/mlflow/mlflow/go/pkg/artifacts/service"
+	mr "github.com/mlflow/mlflow/mlflow/go/pkg/model_registry/service"
 	ts "github.com/mlflow/mlflow/mlflow/go/pkg/tracking/service"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/config"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/server/parser"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/server/routes"
 )
 
 func configureApp(loggerInstance *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
@@ -152,9 +156,9 @@ func newFiberConfig() fiber.Config {
 func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 	app := fiber.New(newFiberConfig())
 
-	parser, err := NewHTTPRequestParser()
+	parser, err := parser.NewHTTPRequestParser()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create new HTTP request parser: %w", err)
 	}
 
 	mlflowService, err := ts.NewTrackingService(logger, cfg)
@@ -162,7 +166,21 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 		return nil, fmt.Errorf("could not create new tracking service: %w", err)
 	}
 
-	contract.RegisterTrackingServiceRoutes(mlflowService, parser, app)
+	routes.RegisterTrackingServiceRoutes(mlflowService, parser, app)
+
+	modelRegistryService, err := mr.NewModelRegistryService(logger, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create new model registry service: %w", err)
+	}
+
+	routes.RegisterModelRegistryServiceRoutes(modelRegistryService, parser, app)
+
+	artifactService, err := as.NewArtifactsService(logger, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create new artifacts service: %w", err)
+	}
+
+	routes.RegisterArtifactsServiceRoutes(artifactService, parser, app)
 
 	return app, nil
 }

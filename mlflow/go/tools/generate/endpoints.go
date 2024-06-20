@@ -10,14 +10,14 @@ var ServiceInfoMap = map[string]ServiceGenerationInfo{
 		FileNameWithoutExtension: "tracking",
 		ServiceName:              "TrackingService",
 	},
-	// "ModelRegistryService": {
-	// 	FileNameWithoutExtension: "model_registry",
-	// 	ServiceName:              "ModelRegistryService",
-	// },
-	// "MlflowArtifactsService": {
-	// 	FileNameWithoutExtension: "artifacts",
-	// 	ServiceName:              "ArtifactsService",
-	// },
+	"ModelRegistryService": {
+		FileNameWithoutExtension: "model_registry",
+		ServiceName:              "ModelRegistryService",
+	},
+	"MlflowArtifactsService": {
+		FileNameWithoutExtension: "artifacts",
+		ServiceName:              "ArtifactsService",
+	},
 }
 
 var ImplementedEndpoints = []string{
