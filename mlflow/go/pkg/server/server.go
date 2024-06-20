@@ -15,6 +15,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/sirupsen/logrus"
 
+	as "github.com/mlflow/mlflow/mlflow/go/pkg/artifacts/service"
+	mr "github.com/mlflow/mlflow/mlflow/go/pkg/model_registry/service"
 	ts "github.com/mlflow/mlflow/mlflow/go/pkg/tracking/service"
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/config"
@@ -165,6 +167,20 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 	}
 
 	routes.RegisterTrackingServiceRoutes(mlflowService, parser, app)
+
+	modelRegistryService, err := mr.NewModelRegistryService(logger, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create new model registry service: %w", err)
+	}
+
+	routes.RegisterModelRegistryServiceRoutes(modelRegistryService, parser, app)
+
+	artifactService, err := as.NewArtifactsService(logger, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("could not create new artifacts service: %w", err)
+	}
+
+	routes.RegisterArtifactsServiceRoutes(artifactService, parser, app)
 
 	return app, nil
 }
