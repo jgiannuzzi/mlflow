@@ -1,11 +1,8 @@
 package main
 
-import "C"
-
 import (
 	"encoding/json"
 	"sync"
-	"unsafe"
 
 	"github.com/sirupsen/logrus"
 
@@ -41,11 +38,10 @@ func (s *serviceMap[T]) Get(id int64) (T, *contract.Error) {
 
 func (s *serviceMap[T]) Create(
 	creator func(logger *logrus.Logger, config *config.Config) (*T, error),
-	configData unsafe.Pointer,
-	configSize C.int,
+	configBytes []byte,
 ) int64 {
 	var config *config.Config
-	if err := json.Unmarshal(C.GoBytes(configData, configSize), &config); err != nil { //nolint:nlreturn
+	if err := json.Unmarshal(configBytes, &config); err != nil {
 		logrus.Error(err)
 
 		return -1
@@ -59,6 +55,7 @@ func (s *serviceMap[T]) Create(
 
 		return -1
 	}
+
 	logger.SetLevel(logLevel)
 
 	logger.Warn("The experimental Go server is not yet fully supported and may not work as expected")
@@ -73,6 +70,7 @@ func (s *serviceMap[T]) Create(
 
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
+
 	s.counter++
 	s.services[s.counter] = *service
 

@@ -12,7 +12,8 @@ var artifactsServices = newServiceMap[service.ArtifactsService]()
 
 //export CreateArtifactsService
 func CreateArtifactsService(configData unsafe.Pointer, configSize C.int) int64 {
-	return artifactsServices.Create(service.NewArtifactsService, configData, configSize)
+	//nolint:nlreturn
+	return artifactsServices.Create(service.NewArtifactsService, C.GoBytes(configData, configSize))
 }
 
 //export DestroyArtifactsService
