@@ -11,7 +11,7 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 )
 
-// CreateExperiment implements MlflowService.
+// CreateExperiment implements TrackingService.
 func (ts TrackingService) CreateExperiment(input *protos.CreateExperiment) (
 	*protos.CreateExperiment_Response, *contract.Error,
 ) {
@@ -54,7 +54,7 @@ func (ts TrackingService) CreateExperiment(input *protos.CreateExperiment) (
 	return &response, nil
 }
 
-// GetExperiment implements MlflowService.
+// GetExperiment implements TrackingService.
 func (ts TrackingService) GetExperiment(input *protos.GetExperiment) (*protos.GetExperiment_Response, *contract.Error) {
 	experiment, err := ts.Store.GetExperiment(input.GetExperimentId())
 	if err != nil {

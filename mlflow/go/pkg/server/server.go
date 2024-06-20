@@ -161,12 +161,12 @@ func newAPIApp(logger *logrus.Logger, cfg *config.Config) (*fiber.App, error) {
 		return nil, fmt.Errorf("could not create new HTTP request parser: %w", err)
 	}
 
-	mlflowService, err := ts.NewTrackingService(logger, cfg)
+	trackingService, err := ts.NewTrackingService(logger, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("could not create new tracking service: %w", err)
 	}
 
-	routes.RegisterTrackingServiceRoutes(mlflowService, parser, app)
+	routes.RegisterTrackingServiceRoutes(trackingService, parser, app)
 
 	modelRegistryService, err := mr.NewModelRegistryService(logger, cfg)
 	if err != nil {
