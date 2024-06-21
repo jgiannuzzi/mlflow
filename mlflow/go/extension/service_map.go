@@ -63,7 +63,7 @@ func (s *serviceMap[T]) Create(
 
 	service, err := creator(logger, config)
 	if err != nil {
-		logger.Error(err)
+		logger.Error("Failed to create service: ", err)
 
 		return -1
 	}

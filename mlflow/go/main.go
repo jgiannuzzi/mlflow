@@ -32,8 +32,10 @@ func main() {
 	loggerInstance.Debugf("Loaded config: %#v", config)
 
 	ctx, cancel := context.WithCancel(context.Background())
+
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigint)
 
 	go func() {
 		<-sigint
