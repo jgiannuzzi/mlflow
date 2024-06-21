@@ -6,7 +6,14 @@ import (
 )
 
 func (m *ModelRegistryService) GetLatestVersions(
-	_ *protos.GetLatestVersions,
+	input *protos.GetLatestVersions,
 ) (*protos.GetLatestVersions_Response, *contract.Error) {
-	return nil, nil
+	latestVersions, err := m.store.GetLatestVersions(input.GetName(), input.GetStages())
+	if err != nil {
+		return nil, err
+	}
+
+	return &protos.GetLatestVersions_Response{
+		ModelVersions: latestVersions,
+	}, nil
 }

@@ -270,6 +270,9 @@ def _build_go_command(builder, experimental_go_opts, host, port, env_map):
         "shutdownTimeout": opts.get("ShutdownTimeout", "1m"),
         "staticFolder": pathlib.Path(__file__).parent.joinpath(REL_STATIC_DIR).resolve().as_posix(),
         "storeUrl": env_map[BACKEND_STORE_URI_ENV_VAR],
+        "registryStoreUrl": env_map.get(
+            REGISTRY_STORE_URI_ENV_VAR, env_map[BACKEND_STORE_URI_ENV_VAR]
+        ),
         "version": VERSION,
     }
 
