@@ -411,30 +411,33 @@ const (
 	RunNameMaxLength    = 20
 )
 
-func ensureRunName(runModel *models.Run) *contract.Error {
-	var runNameFromTags string
-
-	for _, tag := range runModel.Tags {
+func getRunNameFromTags(tags []models.Tag) string {
+	for _, tag := range tags {
 		if *tag.Key == utils.TagRunName {
-			runNameFromTags = *tag.Value
-
-			break
+			return *tag.Value
 		}
 	}
 
-	if utils.IsNotNilOrEmptyString(runModel.Name) && runNameFromTags != "" && *runModel.Name != runNameFromTags {
+	return ""
+}
+
+func ensureRunName(runModel *models.Run) *contract.Error {
+	runNameFromTags := getRunNameFromTags(runModel.Tags)
+
+	switch {
+	// run_name and name in tags differ
+	case utils.IsNotNilOrEmptyString(runModel.Name) && runNameFromTags != "" && *runModel.Name != runNameFromTags:
 		return contract.NewError(
 			protos.ErrorCode_INVALID_PARAMETER_VALUE,
 			fmt.Sprintf(
-				"Both 'run_name' argument and 'mlflow.runName' tag are specified, but with \n"+
-					"different values (run_name=%q, mlflow.runName=%q).",
+				"Both 'run_name' argument and 'mlflow.runName' tag are specified, but with "+
+					"different values (run_name='%s', mlflow.runName='%s').",
 				*runModel.Name,
 				runNameFromTags,
 			),
 		)
-	}
-
-	if utils.IsNilOrEmptyString(runModel.Name) {
+	// no name was provided, generate a random name
+	case utils.IsNilOrEmptyString(runModel.Name) && runNameFromTags == "":
 		randomName, err := utils.GenerateRandomName()
 		if err != nil {
 			return contract.NewErrorWith(
@@ -445,6 +448,9 @@ func ensureRunName(runModel *models.Run) *contract.Error {
 		}
 
 		runModel.Name = utils.PtrTo(randomName)
+	// use name from tags
+	case utils.IsNilOrEmptyString(runModel.Name) && runNameFromTags != "":
+		runModel.Name = utils.PtrTo(runNameFromTags)
 	}
 
 	if runNameFromTags == "" {
