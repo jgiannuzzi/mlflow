@@ -20,46 +20,6 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/tools/generate/discovery"
 )
 
-func mkImportSpec(value string) *ast.ImportSpec {
-	return &ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: value}}
-}
-
-func mkImportStatements(importStatements ...string) *ast.GenDecl {
-	specs := make([]ast.Spec, 0, len(importStatements))
-
-	for _, importStatement := range importStatements {
-		specs = append(specs, mkImportSpec(importStatement))
-	}
-
-	return &ast.GenDecl{
-		Tok:   token.IMPORT,
-		Specs: specs,
-	}
-}
-
-func mkStarExpr(e ast.Expr) *ast.StarExpr {
-	return &ast.StarExpr{
-		X: e,
-	}
-}
-
-func mkSelectorExpr(x, sel string) *ast.SelectorExpr {
-	return &ast.SelectorExpr{X: ast.NewIdent(x), Sel: ast.NewIdent(sel)}
-}
-
-func mkNamedField(name string, typ ast.Expr) *ast.Field {
-	return &ast.Field{
-		Names: []*ast.Ident{ast.NewIdent(name)},
-		Type:  typ,
-	}
-}
-
-func mkField(typ ast.Expr) *ast.Field {
-	return &ast.Field{
-		Type: typ,
-	}
-}
-
 func mkMethodInfoInputPointerType(methodInfo discovery.MethodInfo) *ast.StarExpr {
 	return mkStarExpr(mkSelectorExpr(methodInfo.PackageName, methodInfo.Input))
 }
@@ -139,62 +99,6 @@ func saveASTToFile(fset *token.FileSet, file *ast.File, addComment bool, outputP
 	}
 
 	return nil
-}
-
-// fun(arg1, arg2, ...)
-func mkCallExpr(fun ast.Expr, args ...ast.Expr) *ast.CallExpr {
-	return &ast.CallExpr{
-		Fun:  fun,
-		Args: args,
-	}
-}
-
-// Shorthand for creating &expr.
-func mkAmpExpr(expr ast.Expr) *ast.UnaryExpr {
-	return &ast.UnaryExpr{
-		Op: token.AND,
-		X:  expr,
-	}
-}
-
-// err != nil.
-var errNotEqualNil = &ast.BinaryExpr{
-	X:  ast.NewIdent("err"),
-	Op: token.NEQ,
-	Y:  ast.NewIdent("nil"),
-}
-
-// return err.
-var returnErr = &ast.ReturnStmt{
-	Results: []ast.Expr{ast.NewIdent("err")},
-}
-
-func mkBlockStmt(stmts ...ast.Stmt) *ast.BlockStmt {
-	return &ast.BlockStmt{
-		List: stmts,
-	}
-}
-
-func mkIfStmt(init ast.Stmt, cond ast.Expr, body *ast.BlockStmt) *ast.IfStmt {
-	return &ast.IfStmt{
-		Init: init,
-		Cond: cond,
-		Body: body,
-	}
-}
-
-func mkAssignStmt(lhs, rhs []ast.Expr) *ast.AssignStmt {
-	return &ast.AssignStmt{
-		Lhs: lhs,
-		Tok: token.DEFINE,
-		Rhs: rhs,
-	}
-}
-
-func mkReturnStmt(results ...ast.Expr) *ast.ReturnStmt {
-	return &ast.ReturnStmt{
-		Results: results,
-	}
 }
 
 //nolint:funlen
@@ -390,6 +294,134 @@ func generateRouteRegistrations(
 	return mkGeneratedFile(pkg, outputPath, decls)
 }
 
+func mkCEndpointBody(serviceName string, method discovery.MethodInfo) *ast.BlockStmt {
+	mapName := strcase.ToLowerCamel(serviceName) + "s"
+
+	return &ast.BlockStmt{
+		List: []ast.Stmt{
+			// service, err := trackingServices.Get(serviceID)
+			mkAssignStmt(
+				[]ast.Expr{
+					ast.NewIdent("service"),
+					ast.NewIdent("err"),
+				},
+				[]ast.Expr{
+					mkCallExpr(mkSelectorExpr(mapName, "Get"), ast.NewIdent("serviceID")),
+				},
+			),
+			// 	if err != nil {
+			//		return makePointerFromError(err, responseSize)
+			//  }
+			mkIfStmt(
+				nil,
+				errNotEqualNil,
+				mkBlockStmt(
+					mkReturnStmt(
+						mkCallExpr(
+							ast.NewIdent("makePointerFromError"),
+							ast.NewIdent("err"),
+							ast.NewIdent("responseSize"),
+						),
+					),
+				),
+			),
+			//	return invokeServiceMethod(
+			// 		service.GetExperiment,
+			//		new(protos.GetExperiment),
+			// 		requestData,
+			// 		requestSize,
+			// 		responseSize,
+			// 	)
+			mkReturnStmt(
+				mkCallExpr(
+					ast.NewIdent("invokeServiceMethod"),
+					mkSelectorExpr("service", strcase.ToCamel(method.Name)),
+					mkCallExpr(ast.NewIdent("new"), mkSelectorExpr("protos", method.Input)),
+					ast.NewIdent("requestData"),
+					ast.NewIdent("requestSize"),
+					ast.NewIdent("responseSize"),
+				),
+			),
+		},
+	}
+}
+
+func mkCEndpoint(serviceName string, method discovery.MethodInfo) *ast.FuncDecl {
+	functionName := fmt.Sprintf("%s%s", serviceName, strcase.ToCamel(method.Name))
+
+	return &ast.FuncDecl{
+		Doc: &ast.CommentGroup{
+			List: []*ast.Comment{
+				{
+					Text: "//export " + functionName,
+				},
+			},
+		},
+		Name: ast.NewIdent(functionName),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					mkNamedField("serviceID", ast.NewIdent("int64")),
+					mkNamedField("requestData", mkSelectorExpr("unsafe", "Pointer")),
+					mkNamedField("requestSize", mkSelectorExpr("C", "int")),
+					mkNamedField("responseSize", mkStarExpr(mkSelectorExpr("C", "int"))),
+				},
+			},
+			Results: &ast.FieldList{
+				List: []*ast.Field{
+					mkField(mkSelectorExpr("unsafe", "Pointer")),
+				},
+			},
+		},
+		Body: mkCEndpointBody(serviceName, method),
+	}
+}
+
+func mkCEndpoints(
+	endpoints map[string]any, serviceName string, serviceInfo discovery.ServiceInfo,
+) []*ast.FuncDecl {
+	funcs := make([]*ast.FuncDecl, 0, len(endpoints))
+
+	for _, method := range serviceInfo.Methods {
+		if _, ok := endpoints[method.Name]; ok {
+			funcs = append(funcs, mkCEndpoint(serviceName, method))
+		}
+	}
+
+	return funcs
+}
+
+func generateEndpoints(
+	pkgFolder string,
+	serviceInfo discovery.ServiceInfo,
+	generationInfo ServiceGenerationInfo,
+	endpoints map[string]any,
+) error {
+	decls := []ast.Decl{
+		mkImportStatements(`"C"`),
+	}
+
+	if len(endpoints) > 0 {
+		decls = append(
+			decls,
+			mkImportStatements(
+				`"unsafe"`,
+				`"github.com/mlflow/mlflow/mlflow/go/pkg/protos"`,
+			),
+		)
+
+		endpoints := mkCEndpoints(endpoints, generationInfo.ServiceName, serviceInfo)
+		for _, endpoint := range endpoints {
+			decls = append(decls, endpoint)
+		}
+	}
+
+	fileName := generationInfo.FileNameWithoutExtension + ".g.go"
+	outputPath := filepath.Join(pkgFolder, "..", "extension", fileName)
+
+	return mkGeneratedFile("main", outputPath, decls)
+}
+
 func generateSourceCode(pkgFolder string) error {
 	services, err := discovery.GetServiceInfos()
 	if err != nil {
@@ -414,6 +446,11 @@ func generateSourceCode(pkgFolder string) error {
 		}
 
 		err = generateRouteRegistrations(pkgFolder, serviceInfo, generationInfo, endpoints)
+		if err != nil {
+			return err
+		}
+
+		err = generateEndpoints(pkgFolder, serviceInfo, generationInfo, endpoints)
 		if err != nil {
 			return err
 		}
