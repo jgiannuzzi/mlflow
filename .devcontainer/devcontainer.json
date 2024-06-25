@@ -4,8 +4,17 @@
   "dockerComposeFile": "docker-compose.yml",
   "workspaceFolder": "/workspaces/mlflow",
   "service": "mlflow",
+  "onCreateCommand": ".devcontainer/onCreate.sh",
   "postCreateCommand": ".devcontainer/postCreate.sh",
   "overrideCommand": true,
+  "features": {
+    "ghcr.io/devcontainers/features/go:1": {
+      "version": "1.22",
+      "golangciLintVersion": "1.59.0"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/dhoeric/features/k6:1": {}
+  },
   "customizations": {
     "vscode": {
       "settings": {
@@ -13,10 +22,17 @@
         "editor.rulers": [80, 100],
         "editor.formatOnSave": true,
         "editor.formatOnSaveTimeout": 5000,
+        "git.alwaysSignOff": true,
+        "go.lintTool": "golangci-lint",
+        "go.useLanguageServer": true,
+        "gopls": {
+          "formatting.local": "github.com/mlflow/mlflow",
+          "formatting.gofumpt": true
+        },
         "python.defaultInterpreterPath": "/usr/local/bin/python",
         "python.analysis.autoImportCompletions": false,
         "[python]": {
-          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.defaultFormatter": "charliermarsh.ruff",
           "editor.formatOnSave": true
         },
         "python.formatting.provider": "none",
@@ -31,14 +47,16 @@
         "GitHub.copilot",
         "GitHub.copilot-chat",
         "GitHub.vscode-pull-request-github",
+        "golang.Go",
         "ms-azuretools.vscode-docker",
-        "ms-python.black-formatter",
         "ms-python.python",
         "ms-toolsai.jupyter",
         "oderwat.indent-rainbow",
+        "pbkit.vscode-pbkit",
         "PKief.material-icon-theme",
         "ritwickdey.LiveServer",
-        "shardulm94.trailing-spaces"
+        "shardulm94.trailing-spaces",
+        "tamasfe.even-better-toml"
       ]
     }
   }

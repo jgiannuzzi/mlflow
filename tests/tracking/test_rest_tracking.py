@@ -8,6 +8,7 @@ import math
 import os
 import pathlib
 import posixpath
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -18,6 +19,8 @@ import flask
 import pandas as pd
 import pytest
 import requests
+import sqlalchemy
+from testcontainers.postgres import PostgresContainer
 
 import mlflow.experiments
 import mlflow.pyfunc
@@ -66,18 +69,53 @@ from tests.tracking.integration_test_utils import (
 _logger = logging.getLogger(__name__)
 
 
-@pytest.fixture(params=["file", "sqlalchemy"])
-def mlflow_client(request, tmp_path):
-    """Provides an MLflow Tracking API client pointed at the local tracking server."""
-    if request.param == "file":
-        backend_uri = tmp_path.joinpath("file").as_uri()
-    elif request.param == "sqlalchemy":
-        path = tmp_path.joinpath("sqlalchemy.db").as_uri()
-        backend_uri = ("sqlite://" if sys.platform == "win32" else "sqlite:////") + path[
-            len("file://") :
-        ]
+@pytest.fixture(scope="session")
+def go_server_path(tmp_path_factory):
+    path = tmp_path_factory.mktemp("go").joinpath("server")
+    pkg = pathlib.Path(mlflow.__file__).parent.joinpath("go").resolve()
+    subprocess.check_call(["go", "build", "-o", path, pkg])
+    return path
 
-    with _init_server(backend_uri, root_artifact_uri=tmp_path.as_uri()) as url:
+
+@pytest.fixture(scope="session")
+def postgres_url():
+    try:
+        with PostgresContainer().with_env("LC_COLLATE", "POSIX") as container:
+            yield container.get_connection_url().replace("+psycopg2", "", 1)
+    except Exception:
+        yield ""
+
+
+@pytest.fixture(params=["file", "sqlite", "postgresql"])
+def backend_uri(request, tmp_path, postgres_url):
+    """Provides a backend URI for the tracking server."""
+    if request.param == "file":
+        return tmp_path.joinpath("file").as_uri()
+    elif request.param == "sqlite":
+        path = tmp_path.joinpath("sqlite.db").as_uri()
+        return ("sqlite://" if sys.platform == "win32" else "sqlite:////") + path[len("file://") :]
+    elif request.param == "postgresql":
+        if not postgres_url:
+            pytest.skip("PostgreSQL is not available - is Docker installed?")
+        engine = sqlalchemy.create_engine(postgres_url)
+        with engine.begin() as connection:
+            connection.execute(sqlalchemy.text("DROP SCHEMA public CASCADE"))
+            connection.execute(sqlalchemy.text("CREATE SCHEMA public"))
+        return postgres_url
+
+
+@pytest.fixture(params=["python", "go"])
+def mlflow_client(request, tmp_path, backend_uri, go_server_path):
+    """Provides an MLflow Tracking API client pointed at the local tracking server."""
+    if request.param == "go":
+        if backend_uri.startswith("file"):
+            pytest.skip("Go server does not currently support the file backend")
+
+    with _init_server(
+        backend_uri,
+        root_artifact_uri=tmp_path.as_uri(),
+        go_server_path=(go_server_path if request.param == "go" else None),
+    ) as url:
         yield MlflowClient(url)
 
 
@@ -169,7 +207,7 @@ def test_create_experiment_validation(mlflow_client):
             "artifact_location": "my_location",
             "tags": "5",
         },
-        "Invalid value 5 for parameter 'tags'",
+        "Invalid value \\\"5\\\" for parameter 'tags'",
     )
 
 
@@ -354,7 +392,7 @@ def test_log_metric_validation(mlflow_client):
             "timestamp": 59,
             "step": "foo",
         },
-        "Invalid value foo for parameter 'step' supplied",
+        "Invalid value \\\"foo\\\" for parameter 'step' supplied",
     )
     assert_bad_request(
         {
@@ -364,7 +402,7 @@ def test_log_metric_validation(mlflow_client):
             "timestamp": "foo",
             "step": 41,
         },
-        "Invalid value foo for parameter 'timestamp' supplied",
+        "Invalid value \\\"foo\\\" for parameter 'timestamp' supplied",
     )
     assert_bad_request(
         {
@@ -655,13 +693,14 @@ def test_log_batch_validation(mlflow_client):
                 "run_id": run_id,
                 request_parameter: "foo",
             },
-            f"Invalid value foo for parameter '{request_parameter}' supplied",
+            f"Invalid value \\\"foo\\\" for parameter '{request_parameter}' supplied",
         )
 
     ## Should 400 if missing timestamp
     assert_bad_request(
         {"run_id": run_id, "metrics": [{"key": "mae", "value": 2.5}]},
-        "Invalid value [{'key': 'mae', 'value': 2.5}] for parameter 'metrics' supplied",
+        """Invalid value [{\\"key\\":\\"mae\\",\\"value\\":2.5}] """
+        + "for parameter 'metrics' supplied",
     )
 
     ## Should 200 if timestamp provided but step is not

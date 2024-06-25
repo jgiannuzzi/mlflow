@@ -17251,8 +17251,9 @@ public final class DatabricksArtifacts {
       "load\0321.mlflow.GetCredentialsForTraceData" +
       "Upload.Response\"L\362\206\031H\nD\n\003GET\0227/mlflow/tr" +
       "aces/{request_id}/credentials-for-data-u" +
-      "pload\032\004\010\002\020\000\020\003B,\n\037com.databricks.api.prot" +
-      "o.mlflow\220\001\001\240\001\001\342?\002\020\001"
+      "pload\032\004\010\002\020\000\020\003B[\n\037com.databricks.api.prot" +
+      "o.mlflowZ-github.com/mlflow/mlflow/mlflo" +
+      "w/go/pkg/protos\220\001\001\240\001\001\342?\002\020\001"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,

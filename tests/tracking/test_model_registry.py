@@ -2,29 +2,70 @@
 Integration test which starts a local Tracking Server on an ephemeral port,
 and ensures we can use the tracking API to communicate with it.
 """
+import pathlib
+import subprocess
+import sys
 import time
 
 import pytest
+import sqlalchemy
+from testcontainers.postgres import PostgresContainer
 
+import mlflow
 from mlflow import MlflowClient
 from mlflow.entities.model_registry import ModelVersion, RegisteredModel
 from mlflow.exceptions import MlflowException
-from mlflow.utils.os import is_windows
 from mlflow.utils.time import get_current_time_millis
 
 from tests.tracking.integration_test_utils import _init_server
 
 
-@pytest.fixture(params=["file", "sqlalchemy"])
-def client(request, tmp_path):
+@pytest.fixture(scope="session")
+def go_server_path(tmp_path_factory):
+    path = tmp_path_factory.mktemp("go").joinpath("server")
+    pkg = pathlib.Path(mlflow.__file__).parent.joinpath("go").resolve()
+    subprocess.check_call(["go", "build", "-o", path, pkg])
+    return path
+
+
+@pytest.fixture(scope="session")
+def postgres_url():
+    try:
+        with PostgresContainer().with_env("LC_COLLATE", "POSIX") as container:
+            yield container.get_connection_url().replace("+psycopg2", "", 1)
+    except Exception:
+        yield ""
+
+
+@pytest.fixture(params=["file", "sqlite", "postgresql"])
+def backend_uri(request, tmp_path, postgres_url):
+    """Provides a backend URI for the tracking server."""
     if request.param == "file":
-        backend_uri = tmp_path.joinpath("file").as_uri()
-    else:
-        path = tmp_path.joinpath("sqlalchemy.db").as_uri()
-        backend_uri = ("sqlite://" if is_windows() else "sqlite:////") + path[len("file://") :]
+        return tmp_path.joinpath("file").as_uri()
+    elif request.param == "sqlite":
+        path = tmp_path.joinpath("sqlite.db").as_uri()
+        return ("sqlite://" if sys.platform == "win32" else "sqlite:////") + path[len("file://") :]
+    elif request.param == "postgresql":
+        if not postgres_url:
+            pytest.skip("PostgreSQL is not available - is Docker installed?")
+        engine = sqlalchemy.create_engine(postgres_url)
+        with engine.begin() as connection:
+            connection.execute(sqlalchemy.text("DROP SCHEMA public CASCADE"))
+            connection.execute(sqlalchemy.text("CREATE SCHEMA public"))
+        return postgres_url
+
+
+@pytest.fixture(params=["python", "go"])
+def client(request, tmp_path, backend_uri, go_server_path):
+    """Provides an MLflow Tracking API client pointed at the local tracking server."""
+    if request.param == "go":
+        if backend_uri.startswith("file"):
+            pytest.skip("Go server does not currently support the file backend")
 
     with _init_server(
-        backend_uri=backend_uri, root_artifact_uri=tmp_path.joinpath("artifacts").as_uri()
+        backend_uri,
+        root_artifact_uri=tmp_path.as_uri(),
+        go_server_path=(go_server_path if request.param == "go" else None),
     ) as url:
         yield MlflowClient(url)
 

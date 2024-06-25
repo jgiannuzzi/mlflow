@@ -81299,7 +81299,9 @@ public final class Service {
       "es\022\024.mlflow.DeleteTraces\032\035.mlflow.Delete" +
       "Traces.Response\"A\362\206\031=\n*\n\004POST\022\034/mlflow/t" +
       "races/delete-traces\032\004\010\002\020\000\020\003*\rDelete Trac" +
-      "esB\036\n\024org.mlflow.api.proto\220\001\001\342?\002\020\001"
+      "esBM\n\024org.mlflow.api.protoZ-github.com/m" +
+      "lflow/mlflow/mlflow/go/pkg/protos\220\001\001\342?\002\020" +
+      "\001"
     };
     descriptor = com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,

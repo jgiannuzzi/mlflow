@@ -7,7 +7,8 @@ import time
 from subprocess import Popen
 
 import mlflow
-from mlflow.server import ARTIFACT_ROOT_ENV_VAR, BACKEND_STORE_URI_ENV_VAR
+from mlflow.server import ARTIFACT_ROOT_ENV_VAR, BACKEND_STORE_URI_ENV_VAR, _build_go_command
+from mlflow.server.handlers import TrackingStoreRegistryWrapper
 
 from tests.helper_functions import LOCALHOST, get_safe_port
 
@@ -31,7 +32,9 @@ def _await_server_up_or_die(port, timeout=30):
 
 
 @contextlib.contextmanager
-def _init_server(backend_uri, root_artifact_uri, extra_env=None, app="mlflow.server:app"):
+def _init_server(
+    backend_uri, root_artifact_uri, extra_env=None, app="mlflow.server:app", go_server_path=None
+):
     """
     Launch a new REST server using the tracking store specified by backend_uri and root artifact
     directory specified by root_artifact_uri.
@@ -40,8 +43,16 @@ def _init_server(backend_uri, root_artifact_uri, extra_env=None, app="mlflow.ser
     """
     mlflow.set_tracking_uri(None)
     server_port = get_safe_port()
-    with Popen(
-        [
+
+    env = {
+        **os.environ,
+        BACKEND_STORE_URI_ENV_VAR: backend_uri,
+        ARTIFACT_ROOT_ENV_VAR: root_artifact_uri,
+        **(extra_env or {}),
+    }
+
+    def python_command_builder(host, port):
+        return [
             sys.executable,
             "-m",
             "flask",
@@ -49,23 +60,31 @@ def _init_server(backend_uri, root_artifact_uri, extra_env=None, app="mlflow.ser
             app,
             "run",
             "--host",
-            LOCALHOST,
+            host,
             "--port",
-            str(server_port),
-        ],
-        env={
-            **os.environ,
-            BACKEND_STORE_URI_ENV_VAR: backend_uri,
-            ARTIFACT_ROOT_ENV_VAR: root_artifact_uri,
-            **(extra_env or {}),
-        },
-    ) as proc:
+            str(port),
+        ]
+
+    def go_command_builder(host, port):
+        # Make sure the database is initialized by the Python code first
+        TrackingStoreRegistryWrapper().get_store(backend_uri, root_artifact_uri)
+        return _build_go_command(
+            python_command_builder,
+            f"LogLevel=debug,ShutdownTimeout=1s,ServerPath={go_server_path}",
+            host,
+            port,
+            env,
+        )
+
+    command_builder = go_command_builder if go_server_path else python_command_builder
+    command = command_builder(LOCALHOST, server_port)
+
+    with Popen(command, env=env) as proc:
         try:
             _await_server_up_or_die(server_port)
             url = f"http://{LOCALHOST}:{server_port}"
             _logger.info(
-                f"Launching tracking server on {url} with backend URI {backend_uri} and "
-                f"artifact root {root_artifact_uri}"
+                f"Launching tracking server against backend URI {backend_uri}. Server URL: {url}"
             )
             yield url
         finally:

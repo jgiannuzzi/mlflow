@@ -62,7 +62,7 @@ def build(skinny: bool) -> None:
 
     data = {
         "build-system": {
-            "requires": ["setuptools"],
+            "requires": ["setuptools", "wheel"],
             "build-backend": "setuptools.build_meta",
         },
         "project": {

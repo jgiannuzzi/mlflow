@@ -371,6 +371,18 @@ def _validate_static_prefix(ctx, param, value):
         "Unsupported on Windows."
     ),
 )
+@click.option(
+    "--experimental-go",
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="If enabled, run the server with the experimental Go server.",
+)
+@click.option(
+    "--experimental-go-opts",
+    default=None,
+    help="Additional options forwarded to the Go server process.",
+)
 def server(
     backend_store_uri,
     registry_store_uri,
@@ -387,6 +399,8 @@ def server(
     expose_prometheus,
     app_name,
     dev,
+    experimental_go,
+    experimental_go_opts,
 ):
     """
     Run the MLflow tracking server.
@@ -444,6 +458,8 @@ def server(
             waitress_opts,
             expose_prometheus,
             app_name,
+            experimental_go,
+            experimental_go_opts,
         )
     except ShellCommandException:
         eprint("Running the mlflow server failed. Please see the logs above for details.")

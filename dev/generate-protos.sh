@@ -11,6 +11,8 @@ PROTOS="mlflow/protos"
 protoc -I="$PROTOS" \
     --python_out="$PROTOS" \
     --java_out="mlflow/java/client/src/main/java" \
+    --go_out="." \
+    --go_opt=module=github.com/mlflow/mlflow \
     "$PROTOS"/databricks.proto \
     "$PROTOS"/service.proto \
     "$PROTOS"/model_registry.proto \
@@ -71,3 +73,6 @@ rm "$TEST_PROTOS/test_message_pb2.py.old"
 rm "$PROTOS/databricks_filesystem_service_pb2.py.old"
 
 python ./dev/proto_to_graphql/code_generator.py
+
+# Generate the Go interfaces
+go run ./mlflow/go/tools/generate ./mlflow/go/pkg
