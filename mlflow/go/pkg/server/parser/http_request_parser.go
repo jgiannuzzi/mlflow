@@ -29,6 +29,14 @@ func NewHTTPRequestParser() (*HTTPRequestParser, error) {
 	}, nil
 }
 
+func (p *HTTPRequestParser) validateInput(input interface{}) *contract.Error {
+	if err := p.validator.Struct(input); err != nil {
+		return validation.NewErrorFromValidationError(input, err)
+	}
+
+	return nil
+}
+
 func (p *HTTPRequestParser) ParseBody(ctx *fiber.Ctx, input interface{}) *contract.Error {
 	if err := ctx.BodyParser(input); err != nil {
 		var unmarshalTypeError *json.UnmarshalTypeError
@@ -44,11 +52,7 @@ func (p *HTTPRequestParser) ParseBody(ctx *fiber.Ctx, input interface{}) *contra
 		return contract.NewError(protos.ErrorCode_BAD_REQUEST, err.Error())
 	}
 
-	if err := p.validator.Struct(input); err != nil {
-		return validation.NewErrorFromValidationError(err)
-	}
-
-	return nil
+	return p.validateInput(input)
 }
 
 func (p *HTTPRequestParser) ParseQuery(ctx *fiber.Ctx, input interface{}) *contract.Error {
@@ -56,9 +60,5 @@ func (p *HTTPRequestParser) ParseQuery(ctx *fiber.Ctx, input interface{}) *contr
 		return contract.NewError(protos.ErrorCode_BAD_REQUEST, err.Error())
 	}
 
-	if err := p.validator.Struct(input); err != nil {
-		return validation.NewErrorFromValidationError(err)
-	}
-
-	return nil
+	return p.validateInput(input)
 }

@@ -237,7 +237,10 @@ func dereference(value interface{}) interface{} {
 	return value
 }
 
-func NewErrorFromValidationError(err error) *contract.Error {
+func NewErrorFromValidationError(input interface{}, err error) *contract.Error {
+	// TODO: when dive was hit, try and grab the top level property via reflection from the input.
+	// Some parsing will need to be done on the error message to get the field name.
+
 	var ve validator.ValidationErrors
 	if errors.As(err, &ve) {
 		validationErrors := make([]string, 0)

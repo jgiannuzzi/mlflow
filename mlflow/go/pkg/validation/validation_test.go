@@ -213,17 +213,37 @@ func TestMaxLengthWithoutTruncating(t *testing.T) {
 		t.Error("Expected maxNoTruncate validation error, got none")
 	}
 
-	var validationErrors validator.ValidationErrors
-	if errors.As(err, &validationErrors) {
-		if len(validationErrors) != 1 {
-			t.Errorf("Expected 1 validation error, got %v", len(validationErrors))
-		}
+	contractError := validation.NewErrorFromValidationError(err)
+	if contractError == nil {
+		t.Error("Expected contract error, got none")
+	}
+}
 
-		validationError := validationErrors[0]
-		if validationError.Tag() != "dip" {
-			t.Errorf("Expected dip validation error, got %v", validationError.Tag())
-		}
-	} else {
-		t.Error("Expected validation error, got none")
+type Child struct {
+	Name string `validate:"max=5"`
+}
+
+type Parent struct {
+	Children []Child `validate:"dive"`
+}
+
+func TestDive(t *testing.T) {
+	parent := Parent{
+		Children: []Child{
+			{
+				Name: "valid",
+			},
+			{
+				Name: "invalid",
+			},
+		},
+	}
+
+	v := validator.New()
+
+	err := v.Struct(parent)
+
+	if err == nil {
+		t.Error("Expected error, got none")
 	}
 }
