@@ -1,6 +1,7 @@
 package sql
 
 import (
+	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -10,34 +11,20 @@ import (
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
 )
 
-// Validate whether there is a single registered model with the given name.
+// Validate whether there is a registered model with the given name.
 func assertModelExists(db *gorm.DB, name string) *contract.Error {
-	var rows []int
+	if err := db.Select("name").Where("name = ?", name).First(&models.RegisteredModel{}).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return contract.NewError(
+				protos.ErrorCode_RESOURCE_DOES_NOT_EXIST,
+				fmt.Sprintf("registered model with name=%q not found", name),
+			)
+		}
 
-	err := db.Model(&models.RegisteredModel{}).Where("name = ?", name).Select("1").Find(&rows).Error
-	if err != nil {
 		return contract.NewErrorWith(
 			protos.ErrorCode_INTERNAL_ERROR,
-			fmt.Sprintf("failed to get registered models for %q", name),
+			fmt.Sprintf("could not query registered model with name=%q", name),
 			err,
-		)
-	}
-
-	if len(rows) == 0 {
-		return contract.NewError(
-			protos.ErrorCode_RESOURCE_DOES_NOT_EXIST,
-			fmt.Sprintf("registered model with name=%q not found", name),
-		)
-	}
-
-	if len(rows) > 1 {
-		return contract.NewError(
-			protos.ErrorCode_INVALID_STATE,
-			fmt.Sprintf(
-				"expected only 1 registered model with name=%q. Found %d.",
-				name,
-				len(rows),
-			),
 		)
 	}
 
@@ -47,9 +34,8 @@ func assertModelExists(db *gorm.DB, name string) *contract.Error {
 func (m *ModelRegistrySQLStore) GetLatestVersions(
 	name string, stages []string,
 ) ([]*protos.ModelVersion, *contract.Error) {
-	existsErr := assertModelExists(m.db, name)
-	if existsErr != nil {
-		return nil, existsErr
+	if err := assertModelExists(m.db, name); err != nil {
+		return nil, err
 	}
 
 	var modelVersions []*models.ModelVersion
