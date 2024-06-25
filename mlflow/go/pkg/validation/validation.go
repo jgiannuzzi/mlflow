@@ -15,6 +15,7 @@ import (
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
 )
 
 const (
@@ -138,6 +139,25 @@ func validateLogBatchLimits(structLevel validator.StructLevel) {
 	}
 }
 
+func maxLengthWithoutTruncating(fieldLevel validator.FieldLevel) bool {
+	truncate, err := utils.ReadTruncateLongValuesEnvironmentVariable()
+	if err != nil || truncate {
+		// The error will be returned once it is used later on.
+		return true
+	}
+
+	valueStr := fieldLevel.Field().String()
+	maxLengthValue := fieldLevel.Param()
+
+	maxLength, err := strconv.ParseInt(maxLengthValue, 10, 32)
+	if err != nil {
+		return true
+	}
+
+	return len(valueStr) <= int(maxLength)
+}
+
+//nolint:funlen
 func NewValidator() (*validator.Validate, error) {
 	validate := validator.New()
 
@@ -192,6 +212,10 @@ func NewValidator() (*validator.Validate, error) {
 	}
 
 	if err := validate.RegisterValidation("runId", regexValidation(runIDRegex)); err != nil {
+		return nil, fmt.Errorf("validation registration for 'runId' failed: %w", err)
+	}
+
+	if err := validate.RegisterValidation("maxNoTruncate", maxLengthWithoutTruncating); err != nil {
 		return nil, fmt.Errorf("validation registration for 'runId' failed: %w", err)
 	}
 

@@ -11,6 +11,7 @@
       "mode": "auto",
       "program": "${workspaceFolder}/mlflow/go",
       "env": {
+        "MLFLOW_TRUNCATE_LONG_VALUES": "false",
         "MLFLOW_GO_CONFIG": "{\"Address\": \"127.0.0.1:5000\", \"DefaultArtifactRoot\": \"mlflow-artifacts:/\", \"LogLevel\": \"debug\", \"PythonAddress\": \"127.0.0.1:5001\", \"PythonCommand\": [\"/usr/local/bin/python\", \"-m\", \"gunicorn\", \"-b\", \"127.0.0.1:5001\", \"mlflow.server:app\"], \"PythonEnv\": [\"_MLFLOW_SERVER_FILE_STORE=postgresql://postgres:postgres@localhost/postgres\", \"_MLFLOW_SERVER_REGISTRY_STORE=postgresql://postgres:postgres@localhost/postgres\", \"_MLFLOW_SERVER_ARTIFACT_ROOT=mlflow-artifacts:/\", \"_MLFLOW_SERVER_SERVE_ARTIFACTS=true\", \"_MLFLOW_SERVER_ARTIFACT_DESTINATION=/tmp/mlartifacts\"], \"ShutdownTimeout\": \"1s\", \"StaticFolder\": \"${workspaceFolder}/mlflow/server/js/build\", \"StoreUrl\": \"postgresql://postgres:postgres@localhost/postgres\", \"Version\": \"dev\"}"
       },
       "postDebugTask": "Stop Python server"

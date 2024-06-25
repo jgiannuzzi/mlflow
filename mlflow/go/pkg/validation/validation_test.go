@@ -2,6 +2,7 @@ package validation_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -173,6 +174,43 @@ func TestMissingTimestampInNestedMetric(t *testing.T) {
 	err = serverValidator.Struct(&logBatch)
 	if err == nil {
 		t.Error("Expected dip validation error, got none")
+	}
+
+	var validationErrors validator.ValidationErrors
+	if errors.As(err, &validationErrors) {
+		if len(validationErrors) != 1 {
+			t.Errorf("Expected 1 validation error, got %v", len(validationErrors))
+		}
+
+		validationError := validationErrors[0]
+		if validationError.Tag() != "dip" {
+			t.Errorf("Expected dip validation error, got %v", validationError.Tag())
+		}
+	} else {
+		t.Error("Expected validation error, got none")
+	}
+}
+
+func TestMaxLengthWithoutTruncating(t *testing.T) {
+	t.Setenv(utils.MLFlowTruncateLongValues, "false")
+
+	logBatchWithLongParam := protos.LogBatch{
+		RunId: utils.PtrTo("odcppTsGTMkHeDcqfZOYDMZSf"),
+		Params: []*protos.Param{
+			{
+				Key:   utils.PtrTo("key1"),
+				Value: utils.PtrTo(strings.Repeat("a", 6001)),
+			},
+		},
+	}
+
+	serverValidator, err := validation.NewValidator()
+	require.NoError(t, err)
+
+	err = serverValidator.Struct(&logBatchWithLongParam)
+
+	if err == nil {
+		t.Error("Expected maxNoTruncate validation error, got none")
 	}
 
 	var validationErrors validator.ValidationErrors
