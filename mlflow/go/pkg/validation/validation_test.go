@@ -2,6 +2,7 @@ package validation_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/go-playground/validator/v10"
@@ -187,5 +188,64 @@ func TestMissingTimestampInNestedMetric(t *testing.T) {
 		}
 	} else {
 		t.Error("Expected validation error, got none")
+	}
+}
+
+func TestMaxLengthWithoutTruncating(t *testing.T) {
+	t.Setenv(utils.MLFlowTruncateLongValues, "false")
+
+	logBatchWithLongParam := protos.LogBatch{
+		RunId: utils.PtrTo("odcppTsGTMkHeDcqfZOYDMZSf"),
+		Params: []*protos.Param{
+			{
+				Key:   utils.PtrTo("key1"),
+				Value: utils.PtrTo(strings.Repeat("a", 6001)),
+			},
+		},
+	}
+
+	serverValidator, err := validation.NewValidator()
+	require.NoError(t, err)
+
+	err = serverValidator.Struct(&logBatchWithLongParam)
+
+	if err == nil {
+		t.Error("Expected maxNoTruncate validation error, got none")
+	}
+
+	contractError := validation.NewErrorFromValidationError(&logBatchWithLongParam, err)
+	if contractError == nil {
+		t.Error("Expected contract error, got none")
+	}
+}
+
+type Child struct {
+	Name string `validate:"max=5"`
+}
+
+type Parent struct {
+	Children []Child `validate:"dive"`
+}
+
+func TestDive(t *testing.T) {
+	parent := Parent{
+		Children: []Child{
+			{
+				Name: "valid",
+			},
+			{
+				Name: "invalid",
+			},
+		},
+	}
+
+	v := validator.New()
+
+	err := v.Struct(parent)
+
+	contractError := validation.NewErrorFromValidationError(&parent, err)
+
+	if contractError != nil {
+		t.Error("Expected contract error, got none")
 	}
 }

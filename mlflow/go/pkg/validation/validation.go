@@ -15,6 +15,7 @@ import (
 
 	"github.com/mlflow/mlflow/mlflow/go/pkg/contract"
 	"github.com/mlflow/mlflow/mlflow/go/pkg/protos"
+	"github.com/mlflow/mlflow/mlflow/go/pkg/utils"
 )
 
 const (
@@ -138,6 +139,25 @@ func validateLogBatchLimits(structLevel validator.StructLevel) {
 	}
 }
 
+func maxLengthWithoutTruncating(fieldLevel validator.FieldLevel) bool {
+	truncate, err := utils.ReadTruncateLongValuesEnvironmentVariable()
+	if err != nil || truncate {
+		// The error will be returned once it is used later on.
+		return true
+	}
+
+	valueStr := fieldLevel.Field().String()
+	maxLengthValue := fieldLevel.Param()
+
+	maxLength, err := strconv.ParseInt(maxLengthValue, 10, 32)
+	if err != nil {
+		return true
+	}
+
+	return len(valueStr) <= int(maxLength)
+}
+
+//nolint:funlen
 func NewValidator() (*validator.Validate, error) {
 	validate := validator.New()
 
@@ -195,6 +215,10 @@ func NewValidator() (*validator.Validate, error) {
 		return nil, fmt.Errorf("validation registration for 'runId' failed: %w", err)
 	}
 
+	if err := validate.RegisterValidation("maxNoTruncate", maxLengthWithoutTruncating); err != nil {
+		return nil, fmt.Errorf("validation registration for 'runId' failed: %w", err)
+	}
+
 	validate.RegisterStructValidation(validateLogBatchLimits, &protos.LogBatch{})
 
 	return validate, nil
@@ -213,7 +237,21 @@ func dereference(value interface{}) interface{} {
 	return value
 }
 
-func NewErrorFromValidationError(err error) *contract.Error {
+// Parent.Children[1].Name
+var nestedPropertRegex = regexp.MustCompile(`.+\[\d+\]`)
+
+func stripBrackets(input string) string {
+	start := strings.Index(input, "[")
+	if start == -1 {
+		return input
+	}
+	return input[:start]
+}
+
+func NewErrorFromValidationError(input interface{}, err error) *contract.Error {
+	// TODO: when dive was hit, try and grab the top level property via reflection from the input.
+	// Some parsing will need to be done on the error message to get the field name.
+
 	var ve validator.ValidationErrors
 	if errors.As(err, &ve) {
 		validationErrors := make([]string, 0)
@@ -222,6 +260,29 @@ func NewErrorFromValidationError(err error) *contract.Error {
 			field := err.Field()
 			tag := err.Tag()
 			value := dereference(err.Value())
+			structNs := err.StructNamespace()
+
+			structPath := strings.Split(structNs, ".")
+			if len(structPath) > 1 {
+
+				rootProp := structPath[1]
+				inputValue := reflect.ValueOf(dereference(input))
+
+				if nestedPropertRegex.MatchString(rootProp) {
+					// the prop is a slice
+					propertyName := stripBrackets(rootProp)
+					field := inputValue.FieldByName(propertyName)
+					if !field.IsValid() {
+						return contract.NewError(
+							protos.ErrorCode_INTERNAL_ERROR,
+							fmt.Sprintf("field %s not found in input", propertyName),
+						)
+					}
+					// check field.IsValid()
+
+					value = field.Index(1).Interface()
+				}
+			}
 
 			switch tag {
 			case "required":
