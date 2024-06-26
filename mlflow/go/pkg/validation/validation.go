@@ -237,6 +237,17 @@ func dereference(value interface{}) interface{} {
 	return value
 }
 
+// Parent.Children[1].Name
+var nestedPropertRegex = regexp.MustCompile(`.+\[\d+\]`)
+
+func stripBrackets(input string) string {
+	start := strings.Index(input, "[")
+	if start == -1 {
+		return input
+	}
+	return input[:start]
+}
+
 func NewErrorFromValidationError(input interface{}, err error) *contract.Error {
 	// TODO: when dive was hit, try and grab the top level property via reflection from the input.
 	// Some parsing will need to be done on the error message to get the field name.
@@ -249,6 +260,29 @@ func NewErrorFromValidationError(input interface{}, err error) *contract.Error {
 			field := err.Field()
 			tag := err.Tag()
 			value := dereference(err.Value())
+			structNs := err.StructNamespace()
+
+			structPath := strings.Split(structNs, ".")
+			if len(structPath) > 1 {
+
+				rootProp := structPath[1]
+				inputValue := reflect.ValueOf(dereference(input))
+
+				if nestedPropertRegex.MatchString(rootProp) {
+					// the prop is a slice
+					propertyName := stripBrackets(rootProp)
+					field := inputValue.FieldByName(propertyName)
+					if !field.IsValid() {
+						return contract.NewError(
+							protos.ErrorCode_INTERNAL_ERROR,
+							fmt.Sprintf("field %s not found in input", propertyName),
+						)
+					}
+					// check field.IsValid()
+
+					value = field.Index(1).Interface()
+				}
+			}
 
 			switch tag {
 			case "required":

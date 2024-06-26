@@ -213,7 +213,7 @@ func TestMaxLengthWithoutTruncating(t *testing.T) {
 		t.Error("Expected maxNoTruncate validation error, got none")
 	}
 
-	contractError := validation.NewErrorFromValidationError(err)
+	contractError := validation.NewErrorFromValidationError(&logBatchWithLongParam, err)
 	if contractError == nil {
 		t.Error("Expected contract error, got none")
 	}
@@ -243,7 +243,9 @@ func TestDive(t *testing.T) {
 
 	err := v.Struct(parent)
 
-	if err == nil {
-		t.Error("Expected error, got none")
+	contractError := validation.NewErrorFromValidationError(&parent, err)
+
+	if contractError != nil {
+		t.Error("Expected contract error, got none")
 	}
 }
