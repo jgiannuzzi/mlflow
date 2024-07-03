@@ -6,6 +6,8 @@ import sys
 import time
 from subprocess import Popen
 
+import pytest
+
 import mlflow
 from mlflow.server import ARTIFACT_ROOT_ENV_VAR, BACKEND_STORE_URI_ENV_VAR
 
@@ -40,8 +42,34 @@ def _init_server(backend_uri, root_artifact_uri, extra_env=None, app="mlflow.ser
     """
     mlflow.set_tracking_uri(None)
     server_port = get_safe_port()
-    with Popen(
-        [
+
+    if "MLFLOW_GO_TESTING" in os.environ:
+        args = [
+            sys.executable,
+            "-m",
+            "mlflow_go.cli",
+            "server",
+            "--workers",
+            "1",
+            "--gunicorn-opts",
+            "--log-level=debug --limit-request-line=16384 --limit-request-field_size=16384",
+            "--go-opts",
+            "log_level=debug",
+            "--backend-store-uri",
+            backend_uri,
+            "--default-artifact-root",
+            root_artifact_uri,
+            "--host",
+            LOCALHOST,
+            "--port",
+            str(server_port),
+        ]
+        env = {
+            **os.environ,
+            **(extra_env or {}),
+        }
+    else:
+        args = [
             sys.executable,
             "-m",
             "flask",
@@ -52,13 +80,17 @@ def _init_server(backend_uri, root_artifact_uri, extra_env=None, app="mlflow.ser
             LOCALHOST,
             "--port",
             str(server_port),
-        ],
-        env={
+        ]
+        env = {
             **os.environ,
             BACKEND_STORE_URI_ENV_VAR: backend_uri,
             ARTIFACT_ROOT_ENV_VAR: root_artifact_uri,
             **(extra_env or {}),
-        },
+        }
+
+    with Popen(
+        args,
+        env=env,
     ) as proc:
         try:
             _await_server_up_or_die(server_port)
